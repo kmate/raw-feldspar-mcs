@@ -24,30 +24,9 @@ data LocalArr a
     = LocalArr
 
 
-data AllocCMD (prog :: * -> *) a
-  where
-    Alloc :: CoreId -> Size -> AllocCMD prog (LocalArr a)
-
-instance HFunctor AllocCMD
-  where
-    hfmap _ (Alloc coreId size) = Alloc coreId size
-
-
-data RunHostCMD (prog :: * -> *) a
-  where
-    RunHost :: Host a -> RunHostCMD prog a
-
-instance HFunctor RunHostCMD
-  where
-    hfmap _ (RunHost host) = RunHost host
-
-
-type AllocHostCMD
-    =   AllocCMD
-    :+: RunHostCMD
-
-type AllocHost a = Program AllocHostCMD a
-
+--------------------------------------------------------------------------------
+-- Host layer
+--------------------------------------------------------------------------------
 
 data MulticoreCMD (prog :: * -> *) a
   where
@@ -88,3 +67,32 @@ instance (a ~ ()) => PrintfType (HostT m a)
 -- FIXME: complete or remove MonadRun instance
 instance MonadRun m => MonadRun (HostT m) where
     liftRun = undefined
+
+
+--------------------------------------------------------------------------------
+-- Allocation layer
+--------------------------------------------------------------------------------
+
+data AllocCMD (prog :: * -> *) a
+  where
+    Alloc :: CoreId -> Size -> AllocCMD prog (LocalArr a)
+
+instance HFunctor AllocCMD
+  where
+    hfmap _ (Alloc coreId size) = Alloc coreId size
+
+
+data RunHostCMD (prog :: * -> *) a
+  where
+    RunHost :: Host a -> RunHostCMD prog a
+
+instance HFunctor RunHostCMD
+  where
+    hfmap _ (RunHost host) = RunHost host
+
+
+type AllocHostCMD
+    =   AllocCMD
+    :+: RunHostCMD
+
+type AllocHost a = Program AllocHostCMD a
