@@ -1,6 +1,5 @@
 module Feldspar.Multicore.Representation where
 
-import Control.Monad.Identity
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
 
@@ -25,6 +24,42 @@ data LocalArr a
 
 
 --------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+data LocalArrCMD (prog :: * -> *) a
+  where
+    GetLArr       :: Data Index -> LocalArr a -> LocalArrCMD prog a
+    UnsafeGetLArr :: Data Index -> LocalArr a -> LocalArrCMD prog a
+    SetLArr       :: Data Index -> a -> LocalArr a -> LocalArrCMD prog ()
+
+instance HFunctor LocalArrCMD
+  where
+    hfmap _ (GetLArr       i arr)   = GetLArr i arr
+    hfmap _ (UnsafeGetLArr i arr)   = UnsafeGetLArr i arr
+    hfmap _ (SetLArr       i v arr) = SetLArr i v arr
+
+
+type CoreCompCMD
+    =   LocalArrCMD
+    :+: CompCMD
+
+newtype CoreComp a = CoreComp { unCoreComp :: ProgramT CoreCompCMD Comp a }
+  deriving (Functor, Applicative, Monad)
+
+
+type instance IExp (CoreCompCMD)       = Data
+type instance IExp (CoreCompCMD :+: i) = Data
+
+instance MonadComp CoreComp
+  where
+    liftComp        = CoreComp . lift
+    iff c t f       = CoreComp $ Imp.iff c (unCoreComp t) (unCoreComp f)
+    for  range body = CoreComp $ Imp.for range (unCoreComp . body)
+    while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
+
+
+--------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
@@ -32,7 +67,7 @@ data MulticoreCMD (prog :: * -> *) a
   where
     Fetch  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
     Flush  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
-    OnCore :: CoreId -> Comp () -> MulticoreCMD prog ()
+    OnCore :: MonadComp m => CoreId -> m () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
@@ -45,27 +80,25 @@ type HostCMD
     =   MulticoreCMD
     :+: RunCMD
 
-newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
-    deriving (Functor, Applicative, Monad, MonadTrans)
-
-type Host = HostT Comp
+newtype Host a = Host { unHost :: ProgramT HostCMD CoreComp a }
+  deriving (Functor, Applicative, Monad)
 
 
 type instance IExp (HostCMD)       = Data
 type instance IExp (HostCMD :+: i) = Data
 
-instance MonadComp m => MonadComp (HostT m) where
-    liftComp        = lift . liftComp
+instance MonadComp Host where
+    liftComp        = Host . lift . liftComp
     iff c t f       = Host $ Imp.iff c (unHost t) (unHost f)
     for  range body = Host $ Imp.for range (unHost . body)
     while cont body = Host $ Imp.while (unHost cont) (unHost body)
 
-instance (a ~ ()) => PrintfType (HostT m a)
+instance (a ~ ()) => PrintfType (Host a)
   where
     fprf h form = Host . singleE . Imp.FPrintf h form . reverse
 
 -- FIXME: complete or remove MonadRun instance
-instance MonadRun m => MonadRun (HostT m) where
+instance MonadRun Host where
     liftRun = undefined
 
 
