@@ -28,22 +28,24 @@ library
 --    ConstraintKinds
     DeriveFunctor
 --    FlexibleContexts
---    FlexibleInstances
+    FlexibleInstances
     GADTs
     GeneralizedNewtypeDeriving
     KindSignatures
 --    MultiParamTypeClasses
 --    PatternSynonyms
 --    Rank2Types
---    ScopedTypeVariables
---    TypeFamilies
+    ScopedTypeVariables
+    TypeFamilies
     TypeOperators
 --    ViewPatterns
 
   build-depends:
     base < 5,
+    mtl,
+    operational-alacarte,
     raw-feldspar >= 0.1,
-    operational-alacarte
+    imperative-edsl >=0.4.1
 
   hs-source-dirs: src
 
