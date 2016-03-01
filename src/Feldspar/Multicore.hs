@@ -1,0 +1,2 @@
+module Feldspar.Multicore where
+
