@@ -17,7 +17,8 @@ import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-type CoreId = Word32
+-- NOTE: this shoud be used instead of Nat when GHC promotes kind synonyms
+-- type CoreId = Nat
 type Size   = Word32
 type Range  = (Data Index, Data Index)
 
