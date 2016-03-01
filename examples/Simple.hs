@@ -37,8 +37,14 @@ simple = do
 --  * local arrays are readable and writable
 --  * remote arrays are write-only
 
-f :: LocalArr a -> LocalArr a -> Comp ()
-f = undefined -- TODO: map (+1)
+f :: LocalArr Int32 -> LocalArr Int32 -> Comp ()
+f input output =
+    for (0, 1, Incl 9) $ \i -> do
+        item :: Data Int32 <- unsafeGetLArr i input
+        setLArr i (item + 1) output
 
-g :: LocalArr a -> LocalArr a -> Comp ()
-g = undefined -- TODO: map (*2)
+g :: LocalArr Int32 -> LocalArr Int32 -> Comp ()
+g input output =
+    for (0, 1, Incl 9) $ \i -> do
+        item :: Data Int32 <- unsafeGetLArr i input
+        setLArr i (item * 2) output

@@ -21,3 +21,13 @@ flush localArr range = Host . singleInj . Flush localArr range
 
 onCore :: CoreId -> Comp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
+
+getLArr :: (Syntax a, MonadComp m) => Data Index -> LocalArr (Internal a) -> m a
+getLArr i = undefined
+
+unsafeGetLArr :: (Syntax a, MonadComp m) => Data Index -> LocalArr (Internal a) -> m a
+unsafeGetLArr i = undefined
+
+setLArr :: forall m a . (Syntax a, MonadComp m) =>
+    Data Index -> a -> LocalArr (Internal a) -> m ()
+setLArr = undefined
