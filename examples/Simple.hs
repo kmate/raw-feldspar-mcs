@@ -4,6 +4,8 @@ import Feldspar
 import Feldspar.Run
 import Feldspar.Multicore
 
+import GHC.TypeLits
+
 
 simple :: AllocHost ()
 simple = do
@@ -22,7 +24,7 @@ simple = do
 
         fetch d0 (0,9) input
         onCore (f d0 d1)
-        onCore (g d1 d2)
+        onCore ((g d1 d2) :: CoreComp 1 ())
         output <- newArr 10
         flush d2 (0,9) output
 
@@ -41,7 +43,8 @@ f input output =
      -- item' :: Data Int32 <- unsafeGetLArr i output
         setLArr i (item + 1) output
 
-g :: LocalArr 1 Int32 -> LocalArr 2 Int32 -> CoreComp 1 ()
+g :: forall (coreId :: Nat).
+     LocalArr coreId Int32 -> LocalArr (coreId + 1) Int32 -> CoreComp coreId ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
         item :: Data Int32 <- unsafeGetLArr i input
