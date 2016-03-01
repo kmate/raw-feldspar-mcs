@@ -11,6 +11,8 @@ import Feldspar.Representation
 import Feldspar.Run.Frontend
 import Feldspar.Run.Representation
 
+import GHC.TypeLits
+
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
@@ -19,7 +21,7 @@ type CoreId = Word32
 type Size   = Word32
 type Range  = (Data Index, Data Index)
 
-data LocalArr a
+data LocalArr (coreId :: Nat) a
     = LocalArr
 
 
@@ -29,9 +31,9 @@ data LocalArr a
 
 data LocalArrCMD (prog :: * -> *) a
   where
-    GetLArr       :: Data Index -> LocalArr a -> LocalArrCMD prog a
-    UnsafeGetLArr :: Data Index -> LocalArr a -> LocalArrCMD prog a
-    SetLArr       :: Data Index -> a -> LocalArr a -> LocalArrCMD prog ()
+    GetLArr       :: Data Index -> LocalArr coreId a -> LocalArrCMD prog a
+    UnsafeGetLArr :: Data Index -> LocalArr coreId a -> LocalArrCMD prog a
+    SetLArr       :: Data Index -> a -> LocalArr coreId a -> LocalArrCMD prog ()
 
 instance HFunctor LocalArrCMD
   where
@@ -44,14 +46,15 @@ type CoreCompCMD
     =   LocalArrCMD
     :+: CompCMD
 
-newtype CoreComp a = CoreComp { unCoreComp :: ProgramT CoreCompCMD Comp a }
-  deriving (Functor, Applicative, Monad)
+newtype CoreComp (coreId :: Nat) a
+    = CoreComp { unCoreComp :: ProgramT CoreCompCMD Comp a }
+        deriving (Functor, Applicative, Monad)
 
 
 type instance IExp (CoreCompCMD)       = Data
 type instance IExp (CoreCompCMD :+: i) = Data
 
-instance MonadComp CoreComp
+instance MonadComp (CoreComp coreId)
   where
     liftComp        = CoreComp . lift
     iff c t f       = CoreComp $ Imp.iff c (unCoreComp t) (unCoreComp f)
@@ -65,22 +68,23 @@ instance MonadComp CoreComp
 
 data MulticoreCMD (prog :: * -> *) a
   where
-    Fetch  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
-    Flush  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
-    OnCore :: MonadComp m => CoreId -> m () -> MulticoreCMD prog ()
+    Fetch  :: LocalArr coreId a -> Range -> Arr a -> MulticoreCMD prog ()
+    Flush  :: LocalArr coreId a -> Range -> Arr a -> MulticoreCMD prog ()
+    OnCore :: MonadComp m => m () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
     hfmap _ (Fetch localArr range arr) = Fetch localArr range arr
     hfmap _ (Flush localArr range arr) = Flush localArr range arr
-    hfmap _ (OnCore coreId coreComp)   = OnCore coreId coreComp
+    hfmap _ (OnCore coreComp)   = OnCore coreComp
 
 
 type HostCMD
     =   MulticoreCMD
     :+: RunCMD
 
-newtype Host a = Host { unHost :: ProgramT HostCMD CoreComp a }
+-- FIXME: remove the constant below and hide the core id parameter
+newtype Host a = Host { unHost :: ProgramT HostCMD (CoreComp 42) a }
   deriving (Functor, Applicative, Monad)
 
 
@@ -108,11 +112,11 @@ instance MonadRun Host where
 
 data AllocCMD (prog :: * -> *) a
   where
-    Alloc :: CoreId -> Size -> AllocCMD prog (LocalArr a)
+    Alloc :: Size -> AllocCMD prog (LocalArr coreId a)
 
 instance HFunctor AllocCMD
   where
-    hfmap _ (Alloc coreId size) = Alloc coreId size
+    hfmap _ (Alloc size) = Alloc size
 
 
 data RunHostCMD (prog :: * -> *) a
