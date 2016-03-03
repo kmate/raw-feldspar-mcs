@@ -4,6 +4,8 @@ import Control.Monad.Operational.Higher
 import Control.Monad.Trans
 
 import Data.ALaCarte
+import Data.Array.IO
+import Data.Typeable
 import Data.Word
 
 import Feldspar
@@ -11,37 +13,41 @@ import Feldspar.Representation
 import Feldspar.Run.Frontend
 import Feldspar.Run.Representation
 
+import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
 type CoreId = Word32
 type Size   = Word32
-type Range  = (Data Index, Data Index)
-
-data LocalArr a
-    = LocalArr
+type Range i = (i, i)
 
 
 --------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
 
-data LocalArrCMD (prog :: * -> *) a
-  where
-    GetLArr       :: Data Index -> LocalArr a -> LocalArrCMD prog a
-    UnsafeGetLArr :: Data Index -> LocalArr a -> LocalArrCMD prog a
-    SetLArr       :: Data Index -> a -> LocalArr a -> LocalArrCMD prog ()
+data LocalArr i a
+    = LocalArrComp VarId
+    | LocalArrEval (IOArray i a)
+  deriving Typeable
 
-instance HFunctor LocalArrCMD
+
+data LocalArrCMD exp (prog :: * -> *) a
   where
-    hfmap _ (GetLArr       i arr)   = GetLArr i arr
-    hfmap _ (UnsafeGetLArr i arr)   = UnsafeGetLArr i arr
-    hfmap _ (SetLArr       i v arr) = SetLArr i v arr
+    GetLArr :: (VarPred exp a, VarPred exp i, Integral i, Ix i) =>
+               exp i -> LocalArr i a -> LocalArrCMD exp prog (exp a)
+    SetLArr :: (VarPred exp a, VarPred exp i, Integral i, Ix i) =>
+               exp i -> exp a -> LocalArr i a -> LocalArrCMD exp prog ()
+
+instance HFunctor (LocalArrCMD exp)
+  where
+    hfmap _ (GetLArr i arr)   = GetLArr i arr
+    hfmap _ (SetLArr i v arr) = SetLArr i v arr
 
 
 type CoreCompCMD
-    =   LocalArrCMD
+    =   LocalArrCMD Data
     :+: CompCMD
 
 newtype CoreComp a = CoreComp { unCoreComp :: ProgramT CoreCompCMD Comp a }
@@ -63,13 +69,15 @@ instance MonadComp CoreComp
 -- Host layer
 --------------------------------------------------------------------------------
 
-data MulticoreCMD (prog :: * -> *) a
+data MulticoreCMD exp (prog :: * -> *) a
   where
-    Fetch  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
-    Flush  :: LocalArr a -> Range -> Arr a -> MulticoreCMD prog ()
-    OnCore :: MonadComp m => CoreId -> m () -> MulticoreCMD prog ()
+    Fetch  :: (VarPred exp a, VarPred exp i, Integral i, Ix i) =>
+              LocalArr i a -> Range i -> Arr a -> MulticoreCMD exp prog ()
+    Flush  :: (VarPred exp a, VarPred exp i, Integral i, Ix i) =>
+              LocalArr i a -> Range i -> Arr a -> MulticoreCMD exp prog ()
+    OnCore :: MonadComp m => CoreId -> m () -> MulticoreCMD exp prog ()
 
-instance HFunctor MulticoreCMD
+instance HFunctor (MulticoreCMD exp)
   where
     hfmap _ (Fetch localArr range arr) = Fetch localArr range arr
     hfmap _ (Flush localArr range arr) = Flush localArr range arr
@@ -77,7 +85,7 @@ instance HFunctor MulticoreCMD
 
 
 type HostCMD
-    =   MulticoreCMD
+    =   MulticoreCMD Data
     :+: RunCMD
 
 newtype Host a = Host { unHost :: ProgramT HostCMD CoreComp a }
@@ -106,11 +114,12 @@ instance MonadRun Host where
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-data AllocCMD (prog :: * -> *) a
+data AllocCMD exp (prog :: * -> *) a
   where
-    Alloc :: CoreId -> Size -> AllocCMD prog (LocalArr a)
+    Alloc :: (VarPred exp a, VarPred exp i, Integral i, Ix i) =>
+             CoreId -> Size -> AllocCMD exp prog (LocalArr i a)
 
-instance HFunctor AllocCMD
+instance HFunctor (AllocCMD exp)
   where
     hfmap _ (Alloc coreId size) = Alloc coreId size
 
@@ -125,7 +134,10 @@ instance HFunctor RunHostCMD
 
 
 type AllocHostCMD
-    =   AllocCMD
+    =   AllocCMD Data
     :+: RunHostCMD
 
 type AllocHost a = Program AllocHostCMD a
+
+type instance IExp (AllocHostCMD)       = Data
+type instance IExp (AllocHostCMD :+: i) = Data

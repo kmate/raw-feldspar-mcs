@@ -37,14 +37,14 @@ simple = do
 --  * local arrays are readable and writable
 --  * remote arrays are write-only
 
-f :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+f :: LArr Int32 -> LArr Int32 -> CoreComp ()
 f input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- unsafeGetLArr i input
+        item :: Data Int32 <- getLArr i input
         setLArr i (item + 1) output
 
-g :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+g :: LArr Int32 -> LArr Int32 -> CoreComp ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- unsafeGetLArr i input
+        item :: Data Int32 <- getLArr i input
         setLArr i (item * 2) output

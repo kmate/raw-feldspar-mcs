@@ -27,7 +27,7 @@ library
   default-extensions:
 --    ConstraintKinds
     DeriveFunctor
---    FlexibleContexts
+    FlexibleContexts
     FlexibleInstances
     GADTs
     GeneralizedNewtypeDeriving
@@ -41,6 +41,7 @@ library
 --    ViewPatterns
 
   build-depends:
+    array,
     base < 5,
     mtl,
     operational-alacarte,
