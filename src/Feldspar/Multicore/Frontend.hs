@@ -1,6 +1,6 @@
 module Feldspar.Multicore.Frontend
     ( alloc, runHost
-    , fetch, flush, onCore, run
+    , fetch, flush, onCore, host
     )where
 
 import Control.Monad.Operational.Higher
@@ -19,22 +19,23 @@ import Feldspar.Multicore.Representation
 -- TODO: implement
 
 fetch :: Type a => Arr a -> Range (Data Index) -> Arr a -> Host ()
-fetch larr r = undefined
+fetch dst r src = undefined
 
 flush :: Type a => Arr a -> Range (Data Index) -> Arr a -> Host ()
-flush larr r = undefined
+flush src r dst = undefined
 
 onCore :: MonadComp m => CoreId -> m () -> Host ()
 onCore c = undefined
 
-run :: Run a -> Host a
-run = Host
+host :: Run a -> Host a
+host = Host
+
 
 --------------------------------------------------------------------------------
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-alloc :: SmallType a => CoreId -> Size -> AllocHost (Arr a)
+alloc :: Type a => CoreId -> Size -> AllocHost (Arr a)
 alloc c = singleInj . Alloc c
 
 runHost :: Host a -> AllocHost a

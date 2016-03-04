@@ -1,7 +1,5 @@
 module Simple where
 
-import Feldspar
-import Feldspar.Run
 import Feldspar.Multicore
 
 
@@ -14,7 +12,7 @@ simple = do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
             printf "Item %d> " i
-            item :: Data Int32 <- run $ fget stdin
+            item :: Data Int32 <- host $ fget stdin
             setArr i item input
 
         fetch d0 (0,9) input
