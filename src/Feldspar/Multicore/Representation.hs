@@ -39,7 +39,9 @@ instance HFunctor HostCMD
 newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
+unwrapHost :: HostT Run a -> Run a
 unwrapHost = interpretT id . unHost
+
 
 instance MonadComp (HostT Run) where
     liftComp        = lift . liftComp
