@@ -14,10 +14,7 @@ simple = do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
             printf "Item %d> " i
-         -- item <- fget stdin
-         -- FIXME: fget should return `MonadRun m => m (Data a)`
-         --        instead of `Run (Data a)`?
-            item :: Data Int32 <- undefined
+            item :: Data Int32 <- run $ fget stdin
             setArr i item input
 
         fetch d0 (0,9) input
@@ -33,18 +30,14 @@ simple = do
         printf "\n"
 
 
--- TODO: add a (Nat :: *) parameter to LocalArr and Comp types instead of using CoreId?
---  * local arrays are readable and writable
---  * remote arrays are write-only
-
-f :: LArr Int32 -> LArr Int32 -> CoreComp ()
+f :: Arr Int32 -> Arr Int32 -> Comp ()
 f input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getLArr i input
-        setLArr i (item + 1) output
+        item :: Data Int32 <- getArr i input
+        setArr i (item + 1) output
 
-g :: LArr Int32 -> LArr Int32 -> CoreComp ()
+g :: Arr Int32 -> Arr Int32 -> Comp ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getLArr i input
-        setLArr i (item * 2) output
+        item :: Data Int32 <- getArr i input
+        setArr i (item * 2) output

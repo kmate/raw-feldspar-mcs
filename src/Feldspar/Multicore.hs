@@ -4,4 +4,4 @@ module Feldspar.Multicore
   ) where
 
 import Feldspar.Multicore.Frontend
-import Feldspar.Multicore.Representation (AllocHost, CoreComp, Host)
+import Feldspar.Multicore.Representation (AllocHost, Host)
