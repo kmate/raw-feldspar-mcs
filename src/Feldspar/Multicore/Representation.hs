@@ -1,6 +1,7 @@
 module Feldspar.Multicore.Representation where
 
 import Control.Monad.Operational.Higher
+import Control.Monad.Trans
 
 import Data.Word
 
@@ -12,33 +13,47 @@ import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-type CoreId = Word32
-type Size   = Word32
-type Range i = (i, i)
+type CoreId     = Word32
+type Size       = Word32
+type IndexRange = (Data Index, Data Index)
 
 
 --------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
--- FIXME: should this be a deep embedding instead of shallow?
-
-newtype Host a = Host { unHost :: Run a }
-  deriving (Functor, Applicative, Monad)
-
-instance MonadComp Host where
-    liftComp        = Host . liftComp
-    iff c t f       = Host $ Run $ Imp.iff c (unRun $ unHost t) (unRun $ unHost f)
-    for  range body = Host $ Run $ Imp.for range (unRun . unHost . body)
-    while cont body = Host $ Run $ Imp.while (unRun $ unHost cont) (unRun $ unHost body)
-
-instance MonadRun Host where
-    liftRun = unHost
-
-instance (a ~ ()) => PrintfType (Host a)
+data HostCMD (prog :: * -> *) a
   where
-    fprf h form = Host . Run . singleE . Imp.FPrintf h form . reverse
+    Wrap   :: Run a -> HostCMD prog a
+    Fetch  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    Flush  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    OnCore :: MonadComp m => CoreId -> m () -> HostCMD prog ()
 
+instance HFunctor HostCMD
+  where
+    hfmap _ (Fetch dst range src) = Fetch dst range src
+    hfmap _ (Flush src range dst) = Flush src range dst
+    hfmap _ (OnCore coreId comp)  = OnCore coreId comp
+
+
+newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
+  deriving (Functor, Applicative, Monad, MonadTrans)
+
+unwrapHost = interpretT id . unHost
+
+instance MonadComp (HostT Run) where
+    liftComp        = lift . liftComp
+    iff cond t f    = lift $ iff cond (unwrapHost t) (unwrapHost f)
+    for range body  = lift $ for range (unwrapHost . body)
+    while cont body = lift $ while (unwrapHost cont) (unwrapHost body)
+
+
+runHostCMD :: HostCMD Run a -> Run a
+runHostCMD (Fetch dst range src) = error "Run fetch"
+runHostCMD (Flush src range dst) = error "Run flush"
+runHostCMD (OnCore coreId comp) =  error "Run onCore"
+
+instance Interp HostCMD Run where interp = runHostCMD
 
 --------------------------------------------------------------------------------
 -- Allocation layer
@@ -47,7 +62,7 @@ instance (a ~ ()) => PrintfType (Host a)
 data AllocHostCMD (prog :: * -> *) a
   where
     Alloc :: Type a => CoreId -> Size -> AllocHostCMD prog (Arr a)
-    RunHost :: Host a -> AllocHostCMD prog a
+    RunHost :: HostT Run a -> AllocHostCMD prog a
 
 instance HFunctor AllocHostCMD
   where
@@ -59,6 +74,6 @@ type AllocHost a = Program AllocHostCMD a
 
 runAllocHostCMD :: AllocHostCMD IO a -> IO a
 runAllocHostCMD (Alloc coreId size) = (runIO :: Run a -> IO a) (newArr (value size))
-runAllocHostCMD (RunHost host) = runIO $ unHost host
+runAllocHostCMD (RunHost host) = runIO $ unwrapHost host
 
 instance Interp AllocHostCMD IO where interp = runAllocHostCMD
