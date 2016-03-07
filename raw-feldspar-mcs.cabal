@@ -20,6 +20,9 @@ library
   exposed-modules:
     Feldspar.Multicore.Representation
     Feldspar.Multicore.Frontend
+    Feldspar.Multicore.Compile.Parallella
+    Feldspar.Multicore.Compile.Platform
+    Feldspar.Multicore.Compile.PThread
     Feldspar.Multicore.Compile
     Feldspar.Multicore
 
@@ -44,6 +47,7 @@ library
   build-depends:
     array,
     base < 5,
+    mainland-pretty >= 0.4 && < 0.5,
     mtl,
     operational-alacarte,
     raw-feldspar >= 0.1,

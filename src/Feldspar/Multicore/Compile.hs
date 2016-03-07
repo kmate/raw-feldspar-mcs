@@ -1,18 +1,27 @@
-module Feldspar.Multicore.Compile where
+module Feldspar.Multicore.Compile
+  ( runIO, compile, icompile
+  , module Feldspar.Multicore.Compile.Parallella
+  , module Feldspar.Multicore.Compile.Platform
+  , module Feldspar.Multicore.Compile.PThread
+  ) where
 
 import Control.Monad.Operational.Higher
+import Data.Proxy
+import Text.PrettyPrint.Mainland (pretty)
 
+import Feldspar.Multicore.Compile.Parallella
+import Feldspar.Multicore.Compile.Platform
+import Feldspar.Multicore.Compile.PThread
 import Feldspar.Multicore.Representation
+import Language.C.Monad
 
 
 runIO :: AllocHost a -> IO a
 runIO = interpret
 
 
--- TODO: implement
+compile :: Interp AllocHostCMD (CGenFor p) => Platform p -> AllocHost a -> String
+compile p = pretty 80 . prettyCGen . runCGenFor p . interpret
 
-compile :: AllocHost a -> String
-compile  = undefined
-
-icompile :: AllocHost a -> IO ()
-icompile  = putStrLn . compile
+icompile :: Interp AllocHostCMD (CGenFor p) => Platform p -> AllocHost a -> IO ()
+icompile p = putStrLn . compile p
