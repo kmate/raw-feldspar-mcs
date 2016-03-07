@@ -23,7 +23,7 @@ fetch dst range = Host . singleInj . Fetch dst range
 flush :: Type a => Arr a -> IndexRange -> Arr a -> HostT m ()
 flush src range = Host . singleInj . Flush src range
 
-onCore :: MonadComp m => CoreId -> m () -> HostT Run ()
+onCore :: CoreId -> Comp () -> HostT Run ()
 onCore coreId = Host . singleInj . OnCore coreId
 
 

@@ -7,6 +7,7 @@ import Data.Word
 
 import Feldspar
 import Feldspar.Run
+import Feldspar.Run.Concurrent
 import Feldspar.Run.Representation
 
 import qualified Language.Embedded.Imperative as Imp
@@ -27,7 +28,7 @@ data HostCMD (prog :: * -> *) a
     Wrap   :: Run a -> HostCMD prog a
     Fetch  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
     Flush  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
-    OnCore :: MonadComp m => CoreId -> m () -> HostCMD prog ()
+    OnCore :: CoreId -> Comp () -> HostCMD prog ()
 
 instance HFunctor HostCMD
   where
@@ -51,9 +52,15 @@ instance MonadComp (HostT Run) where
 
 
 runHostCMD :: HostCMD Run a -> Run a
-runHostCMD (Fetch dst range src) = error "Run fetch"
-runHostCMD (Flush src range dst) = error "Run flush"
-runHostCMD (OnCore coreId comp) =  error "Run onCore"
+runHostCMD (Fetch dst (lower, upper) src) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr i src
+        setArr (i - lower) item dst
+runHostCMD (Flush src (lower, upper) dst) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr (i - lower) src
+        setArr i item dst
+runHostCMD (OnCore coreId comp) = fork (liftRun comp) >> return ()
 
 instance Interp HostCMD Run where interp = runHostCMD
 
