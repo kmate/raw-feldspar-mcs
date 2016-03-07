@@ -1,5 +1,6 @@
 module Feldspar.Multicore.Compile.Parallella where
 
+import Control.Monad.Identity
 import Control.Monad.Operational.Higher
 import Data.Proxy
 
@@ -12,4 +13,8 @@ data Parallella
 parallella :: Platform Parallella
 parallella = Proxy
 
-instance CompFor AllocHostCMD Parallella where comp = error "TODO: compile for Parallella"
+
+instance CompFor AllocHostCMD Parallella Identity
+  where
+    comp = error "TODO: compile for Parallella"
+    unwrap _ _ = runIdentity
