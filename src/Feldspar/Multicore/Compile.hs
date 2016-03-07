@@ -20,7 +20,7 @@ runIO = interpret
 
 
 compile :: CompFor AllocHostCMD p => Platform p -> AllocHost a -> String
-compile p = pretty 80 . prettyCGen . runCGenFor p . interpret
+compile p = pretty 80 . prettyCGen . wrapMain . runCGenFor p . interpret
 
 icompile :: CompFor AllocHostCMD p => Platform p -> AllocHost a -> IO ()
 icompile p = putStrLn . compile p
