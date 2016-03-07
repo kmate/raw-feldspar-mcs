@@ -1,5 +1,5 @@
 module Feldspar.Multicore.Frontend
-    ( alloc, runHost
+    ( alloc, onHost
     , fetch, flush, onCore
     )where
 
@@ -17,13 +17,13 @@ import Feldspar.Multicore.Representation
 -- Host layer
 --------------------------------------------------------------------------------
 
-fetch :: Type a => Arr a -> IndexRange -> Arr a -> HostT m ()
+fetch :: Type a => Arr a -> IndexRange -> Arr a -> Host ()
 fetch dst range = Host . singleInj . Fetch dst range
 
-flush :: Type a => Arr a -> IndexRange -> Arr a -> HostT m ()
+flush :: Type a => Arr a -> IndexRange -> Arr a -> Host ()
 flush src range = Host . singleInj . Flush src range
 
-onCore :: CoreId -> Comp () -> HostT Run ()
+onCore :: CoreId -> Comp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
 
 
@@ -34,5 +34,5 @@ onCore coreId = Host . singleInj . OnCore coreId
 alloc :: Type a => CoreId -> Size -> AllocHost (Arr a)
 alloc coreId = singleInj . Alloc coreId
 
-runHost :: HostT Run a -> AllocHost a
-runHost = singleInj . RunHost
+onHost :: Host a -> AllocHost a
+onHost = singleInj . OnHost

@@ -40,24 +40,25 @@ instance HFunctor HostCMD
 newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
-unwrapHost :: HostT Run a -> Run a
-unwrapHost = interpretT id . unHost
+type Host = HostT Run
+
+runHost :: Host a -> Run a
+runHost = interpretT id . unHost
 
 
-instance MonadComp (HostT Run) where
+instance MonadComp Host where
     liftComp        = lift . liftComp
-    iff cond t f    = lift $ iff cond (unwrapHost t) (unwrapHost f)
-    for range body  = lift $ for range (unwrapHost . body)
-    while cont body = lift $ while (unwrapHost cont) (unwrapHost body)
+    iff cond t f    = lift $ iff cond (runHost t) (runHost f)
+    for range body  = lift $ for range (runHost . body)
+    while cont body = lift $ while (runHost cont) (runHost body)
 
 
 type instance IExp (HostCMD)       = Data
 type instance IExp (HostCMD :+: i) = Data
 
-instance (a ~ ()) => PrintfType (HostT Run a)
+instance (a ~ ()) => PrintfType (Host a)
   where
     fprf h form = lift . Run . singleE . Imp.FPrintf h form . reverse
-
 
 
 runHostCMD :: HostCMD Run a -> Run a
@@ -79,19 +80,19 @@ instance Interp HostCMD Run where interp = runHostCMD
 
 data AllocHostCMD (prog :: * -> *) a
   where
-    Alloc :: Type a => CoreId -> Size -> AllocHostCMD prog (Arr a)
-    RunHost :: HostT Run a -> AllocHostCMD prog a
+    Alloc  :: Type a => CoreId -> Size -> AllocHostCMD prog (Arr a)
+    OnHost :: Host a -> AllocHostCMD prog a
 
 instance HFunctor AllocHostCMD
   where
     hfmap _ (Alloc coreId size) = Alloc coreId size
-    hfmap _ (RunHost host)      = RunHost host
+    hfmap _ (OnHost host)       = OnHost host
 
 type AllocHost a = Program AllocHostCMD a
 
 
 runAllocHostCMD :: AllocHostCMD IO a -> IO a
 runAllocHostCMD (Alloc coreId size) = (runIO :: Run a -> IO a) (newArr (value size))
-runAllocHostCMD (RunHost host) = runIO $ unwrapHost host
+runAllocHostCMD (OnHost host)       = runIO $ runHost host
 
 instance Interp AllocHostCMD IO where interp = runAllocHostCMD

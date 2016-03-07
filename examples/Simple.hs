@@ -8,7 +8,7 @@ simple = do
     d0 <- alloc 0 10
     d1 <- alloc 1 10
     d2 <- alloc 2 10
-    runHost $ do
+    onHost $ do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
             printf "Item %d> " i
