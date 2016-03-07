@@ -6,7 +6,6 @@ module Feldspar.Multicore.Compile
   ) where
 
 import Control.Monad.Operational.Higher
-import Data.Proxy
 import Text.PrettyPrint.Mainland (pretty)
 
 import Feldspar.Multicore.Compile.Parallella
@@ -20,8 +19,8 @@ runIO :: AllocHost a -> IO a
 runIO = interpret
 
 
-compile :: Interp AllocHostCMD (CGenFor p) => Platform p -> AllocHost a -> String
+compile :: CompFor AllocHostCMD p => Platform p -> AllocHost a -> String
 compile p = pretty 80 . prettyCGen . runCGenFor p . interpret
 
-icompile :: Interp AllocHostCMD (CGenFor p) => Platform p -> AllocHost a -> IO ()
+icompile :: CompFor AllocHostCMD p => Platform p -> AllocHost a -> IO ()
 icompile p = putStrLn . compile p

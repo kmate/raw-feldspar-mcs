@@ -12,4 +12,4 @@ data Parallella
 parallella :: Platform Parallella
 parallella = Proxy
 
-instance Interp AllocHostCMD (CGenFor Parallella) where interp = error "TODO: compile for Parallella"
+instance CompFor AllocHostCMD Parallella where comp = error "TODO: compile for Parallella"

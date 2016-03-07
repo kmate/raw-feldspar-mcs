@@ -6,10 +6,16 @@ import Data.Proxy
 import Feldspar.Multicore.Compile.Platform
 import Feldspar.Multicore.Representation
 
+import Language.C.Monad
+
 
 data PThread
 
 pthread :: Platform PThread
 pthread = Proxy
 
-instance Interp AllocHostCMD (CGenFor PThread) where interp = error "TODO: compile for Pthread"
+
+compAllocHostCMD :: AllocHostCMD (CGenFor PThread) a -> CGen a
+compAllocHostCMD = error "TODO: compile for Pthread"
+
+instance CompFor AllocHostCMD PThread where comp = compAllocHostCMD
