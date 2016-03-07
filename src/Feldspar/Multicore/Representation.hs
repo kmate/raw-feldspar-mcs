@@ -51,6 +51,15 @@ instance MonadComp (HostT Run) where
     while cont body = lift $ while (unwrapHost cont) (unwrapHost body)
 
 
+type instance IExp (HostCMD)       = Data
+type instance IExp (HostCMD :+: i) = Data
+
+instance (a ~ ()) => PrintfType (HostT Run a)
+  where
+    fprf h form = lift . Run . singleE . Imp.FPrintf h form . reverse
+
+
+
 runHostCMD :: HostCMD Run a -> Run a
 runHostCMD (Fetch dst (lower, upper) src) =
     for (lower, 1, Incl upper) $ \i -> do

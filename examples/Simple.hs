@@ -11,7 +11,7 @@ simple = do
     runHost $ do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
-            lift $ printf "Item %d> " i
+            printf "Item %d> " i
             item :: Data Int32 <- lift $ fget stdin
             setArr i item input
 
@@ -21,11 +21,11 @@ simple = do
         output <- newArr 10
         flush d2 (0,9) output
 
-        lift $ printf "Output:"
+        printf "Output:"
         for (0, 1, Incl 9) $ \i -> do
             item :: Data Int32 <- getArr i output
-            lift $ printf " %d" item
-        lift $ printf "\n"
+            printf " %d" item
+        printf "\n"
 
 
 f :: Arr Int32 -> Arr Int32 -> Comp ()
