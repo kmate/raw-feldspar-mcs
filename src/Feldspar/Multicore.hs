@@ -2,7 +2,7 @@ module Feldspar.Multicore
   ( lift
   , module Feldspar
   , module Feldspar.Run
-  , module Feldspar.Multicore.Compile
+  , module Feldspar.Multicore.Compile.Parallella
   , module Feldspar.Multicore.Frontend
   , module Feldspar.Multicore.Representation
   ) where
@@ -10,8 +10,8 @@ module Feldspar.Multicore
 import Control.Monad.Trans (lift)
 
 import Feldspar
-import Feldspar.Run hiding (runIO, compile, icompile)
+import Feldspar.Run
 
-import Feldspar.Multicore.Compile
+import Feldspar.Multicore.Compile.Parallella
 import Feldspar.Multicore.Frontend
-import Feldspar.Multicore.Representation (AllocHost, HostT)
+import Feldspar.Multicore.Representation (AllocHost, Host)

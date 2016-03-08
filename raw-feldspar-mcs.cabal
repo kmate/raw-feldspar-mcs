@@ -21,9 +21,6 @@ library
     Feldspar.Multicore.Representation
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
-    Feldspar.Multicore.Compile.Platform
-    Feldspar.Multicore.Compile.PThread
-    Feldspar.Multicore.Compile
     Feldspar.Multicore
 
   default-language: Haskell2010
@@ -47,6 +44,7 @@ library
   build-depends:
     array,
     base < 5,
+    containers,
     language-c-quote >= 0.11 && < 0.12,
     mainland-pretty >= 0.4 && < 0.5,
     mtl,

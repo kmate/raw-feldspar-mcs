@@ -26,9 +26,8 @@ type IndexRange = (Data Index, Data Index)
 
 data HostCMD (prog :: * -> *) a
   where
-    Wrap   :: Run a -> HostCMD prog a
-    Fetch  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
-    Flush  :: Type a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    Fetch  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    Flush  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
     OnCore :: CoreId -> Comp () -> HostCMD prog ()
 
 instance HFunctor HostCMD
@@ -93,11 +92,14 @@ instance HFunctor (AllocHostCMD exp)
 type instance IExp (AllocHostCMD e)       = e
 type instance IExp (AllocHostCMD e :+: i) = e
 
-type AllocHost a = Program (AllocHostCMD Exp.CExp) a
+newtype AllocHost a = AllocHost { unAllocHost :: Program (AllocHostCMD Exp.CExp) a }
+  deriving (Functor, Applicative, Monad)
 
 
-runAllocHostCMD :: (AllocHostCMD exp) IO a -> IO a
-runAllocHostCMD (Alloc coreId size) = (runIO :: Run a -> IO a) (newArr (value size))
-runAllocHostCMD (OnHost host)       = runIO $ runHost host
+runAllocHostCMD :: (AllocHostCMD exp) Run a -> Run a
+runAllocHostCMD (Alloc coreId size) = newArr (value size)
+runAllocHostCMD (OnHost host)       = runHost host
 
-instance Interp (AllocHostCMD exp) IO where interp = runAllocHostCMD
+instance Interp (AllocHostCMD exp) Run where interp = runAllocHostCMD
+
+instance MonadRun AllocHost where liftRun = interpret . unAllocHost
