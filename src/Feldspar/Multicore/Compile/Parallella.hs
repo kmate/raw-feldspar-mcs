@@ -16,8 +16,10 @@ import Data.VirtualContainer
 import Feldspar.Multicore.Representation
 import Feldspar.Representation
 import Feldspar.Run
+import Feldspar.Run.Compile
 
 import qualified Language.C.Monad as C
+import qualified Language.C.Quote as C
 import qualified Language.C.Syntax as C
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
@@ -36,6 +38,7 @@ onParallella action
 --------------------------------------------------------------------------------
 
 
+-- IDEA: write an abstraction layer above ESDK to make the code generation easier?
 -- TODO: add only the required number of cores to the group?
 wrapESDK :: Allocator a -> Run a
 wrapESDK program = do
@@ -61,7 +64,8 @@ compAllocHostCMD cmd@(Alloc coreId size) = do
     let byteSize = size -- FIXME: calculate byte size from element type
     -- can we use sizeof() in C + addition of previous addresses?
     (addr, name) <- state (allocate coreId byteSize)
-    lift $ addDefinition [cedecl| volatile $ty:ty * $id:name = $addr; |]
+    modify (name `hasType` ty)
+    lift $ addDefinition [cedecl| volatile $ty:ty * const $id:name = $addr; |]
     lift $ mkArrayRef name
 compAllocHostCMD (OnHost host) = do
     s <- get
@@ -98,17 +102,42 @@ compHostCMD (Flush src (lower, upper) dst) = do
         -- e_read(&group, 0, 2, d2, output, N * sizeof(uint32_t));
         {- TODO: add size arg and offset to destination -} ]
 compHostCMD (OnCore coreId comp) = do
-    -- TODO: compile comp
+    (coreName, coreDefs) <- compileCore coreId comp
+    -- FIXME: these definitions should go into another translation unit
+    lift $ mapM addDefinition coreDefs
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
     lift $ callProc "e_load"
-        [ strArg "TODO-CORE-X-SREC-NAME.srec"
+        [ strArg $ coreName ++ ".srec"
         , groupAddr
         , valArg $ value r
         , valArg $ value c
         , valArg (value 1 :: Data Int32) --  E_TRUE
         ]
+
+compileCore :: CoreId -> Comp () -> Allocator (Name, [Definition])
+compileCore coreId comp = do
+    arrays <- Map.lookup coreId  <$> gets addrMap
+    globals <- case arrays of
+            Just addrs -> mapM (makeGlobalArr coreId) addrs
+            _          -> return []
+    let (coreMainDef, _) = C.runCGen
+            (wrapCore $ interpret $ lowerTop $ liftRun $ comp)
+            (C.defaultCEnv C.Flags)
+    return ("core" ++ show coreId, globals ++ [coreMainDef])
+
+makeGlobalArr :: CoreId -> (LocalAddress, Name) -> Allocator Definition
+makeGlobalArr coreId (addr, name) = do
+    Just ty <- Map.lookup name <$> gets typeMap
+    let gaddr = addr `toGlobal` coreId
+    return [cedecl| volatile $ty:ty * const $id:name = $gaddr; |]
+
+wrapCore :: C.MonadC m => m () -> m Definition
+wrapCore prog = do
+    (_,uvs,params,items) <- C.inNewFunction $ prog -- >> C.addStm [cstm| return 0; |]
+    C.setUsedVars "main" uvs
+    return [cedecl| int main($params:params){ $items:items }|]
 
 
 --------------------------------------------------------------------------------
@@ -139,11 +168,13 @@ type Name = String
 type LocalAddress = Word32
 type AddressMap = Map.Map CoreId [(LocalAddress, Name)]
 type NameMap = Map.Map Name CoreId
+type TypeMap = Map.Map Name C.Type
 data AllocatorState = AllocatorState
     { group   :: FunArg Data
     , nextId  :: Int
     , addrMap :: AddressMap
     , nameMap :: NameMap
+    , typeMap :: TypeMap
     }
 type Allocator = StateT AllocatorState Run
 
@@ -154,6 +185,7 @@ start g = AllocatorState
     , nextId = 0
     , addrMap = Map.empty
     , nameMap = Map.empty
+    , typeMap = Map.empty
     }
 
 allocate :: CoreId -> Size -> AllocatorState -> ((LocalAddress, Name), AllocatorState)
@@ -168,6 +200,9 @@ allocate coreId size s@AllocatorState{..} = (newEntry, s
     newAddrMap = Map.alter (Just . stepAddress) coreId addrMap
     stepAddress (Just addrs@((lastAddress, _):_)) = (lastAddress + size, newName) : addrs
     stepAddress _ = [(bank2Base, newName)]
+
+hasType :: Name -> C.Type -> AllocatorState -> AllocatorState
+hasType name ty s@AllocatorState{..} = s { typeMap = Map.insert name ty typeMap }
 
 groupCoordsForName :: Name -> AllocatorState -> CoreCoords
 groupCoordsForName name AllocatorState{..}
