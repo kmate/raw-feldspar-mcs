@@ -14,7 +14,7 @@ parallella :: Platform Parallella
 parallella = Proxy
 
 
-instance CompFor AllocHostCMD Parallella Identity
+instance CompFor (AllocHostCMD exp) Parallella Identity
   where
     comp = error "TODO: compile for Parallella"
     unwrap _ _ = runIdentity

@@ -47,6 +47,7 @@ library
   build-depends:
     array,
     base < 5,
+    language-c-quote >= 0.11 && < 0.12,
     mainland-pretty >= 0.4 && < 0.5,
     mtl,
     operational-alacarte,

@@ -14,19 +14,21 @@ import Feldspar.Multicore.Compile.Parallella
 import Feldspar.Multicore.Compile.Platform
 import Feldspar.Multicore.Compile.PThread
 import Feldspar.Multicore.Representation
+
 import Language.C.Monad
+import Language.Embedded.CExp
 
 
 runIO :: AllocHost a -> IO a
 runIO = interpret
 
 
-compile :: (MonadFix m, CompFor AllocHostCMD p m) => Platform p -> AllocHost a -> String
+compile :: (MonadFix m, CompFor (AllocHostCMD CExp) p m) => Platform p -> AllocHost a -> String
 compile p
     = pretty 80
-    . unwrap p (Proxy :: Proxy AllocHostCMD)
+    . unwrap p (Proxy :: Proxy (AllocHostCMD CExp))
     . prettyCGenT . wrapMain . runCGenTFor p
     . interpret
 
-icompile :: (MonadFix m, CompFor AllocHostCMD p m) => Platform p -> AllocHost a -> IO ()
+icompile :: (MonadFix m, CompFor (AllocHostCMD CExp) p m) => Platform p -> AllocHost a -> IO ()
 icompile p = putStrLn . compile p

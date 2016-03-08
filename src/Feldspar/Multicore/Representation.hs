@@ -2,7 +2,6 @@ module Feldspar.Multicore.Representation where
 
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
-
 import Data.Word
 
 import Feldspar
@@ -10,6 +9,8 @@ import Feldspar.Run
 import Feldspar.Run.Concurrent
 import Feldspar.Run.Representation
 
+import qualified Language.Embedded.CExp as Exp
+import qualified Language.Embedded.Expression as Exp
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
@@ -74,25 +75,29 @@ runHostCMD (OnCore coreId comp) = fork (liftRun comp) >> return ()
 
 instance Interp HostCMD Run where interp = runHostCMD
 
+
 --------------------------------------------------------------------------------
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-data AllocHostCMD (prog :: * -> *) a
+data AllocHostCMD exp (prog :: * -> *) a
   where
-    Alloc  :: Type a => CoreId -> Size -> AllocHostCMD prog (Arr a)
-    OnHost :: Host a -> AllocHostCMD prog a
+    Alloc  :: (Exp.VarPred exp a, SmallType a) => CoreId -> Size -> AllocHostCMD exp prog (Arr a)
+    OnHost :: Host a -> AllocHostCMD exp prog a
 
-instance HFunctor AllocHostCMD
+instance HFunctor (AllocHostCMD exp)
   where
     hfmap _ (Alloc coreId size) = Alloc coreId size
     hfmap _ (OnHost host)       = OnHost host
 
-type AllocHost a = Program AllocHostCMD a
+type instance IExp (AllocHostCMD e)       = e
+type instance IExp (AllocHostCMD e :+: i) = e
+
+type AllocHost a = Program (AllocHostCMD Exp.CExp) a
 
 
-runAllocHostCMD :: AllocHostCMD IO a -> IO a
+runAllocHostCMD :: (AllocHostCMD exp) IO a -> IO a
 runAllocHostCMD (Alloc coreId size) = (runIO :: Run a -> IO a) (newArr (value size))
 runAllocHostCMD (OnHost host)       = runIO $ runHost host
 
-instance Interp AllocHostCMD IO where interp = runAllocHostCMD
+instance Interp (AllocHostCMD exp) IO where interp = runAllocHostCMD

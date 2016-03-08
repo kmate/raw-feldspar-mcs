@@ -31,8 +31,8 @@ onCore coreId = Host . singleInj . OnCore coreId
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-alloc :: Type a => CoreId -> Size -> AllocHost (Arr a)
-alloc coreId = singleInj . Alloc coreId
+alloc :: SmallType a => CoreId -> Size -> AllocHost (Arr a)
+alloc coreId = singleE . Alloc coreId
 
 onHost :: Host a -> AllocHost a
-onHost = singleInj . OnHost
+onHost = singleE . OnHost
