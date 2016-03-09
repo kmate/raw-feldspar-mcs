@@ -1,7 +1,12 @@
 module Feldspar.Multicore
-  ( module Feldspar.Multicore.Frontend
-  , module Feldspar.Multicore.Representation
+  ( lift, module F
   ) where
 
-import Feldspar.Multicore.Frontend
-import Feldspar.Multicore.Representation (AllocHost, CoreComp, Host, LocalArr)
+import Control.Monad.Trans (lift)
+
+import Feldspar as F
+import Feldspar.Run as F
+
+import Feldspar.Multicore.Compile.Parallella as F
+import Feldspar.Multicore.Frontend as F
+import Feldspar.Multicore.Representation as F (AllocHost, Host)

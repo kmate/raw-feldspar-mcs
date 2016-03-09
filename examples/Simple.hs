@@ -1,7 +1,5 @@
 module Simple where
 
-import Feldspar
-import Feldspar.Run
 import Feldspar.Multicore
 
 import GHC.TypeLits
@@ -12,14 +10,11 @@ simple = do
     d0 <- alloc 10
     d1 <- alloc 10
     d2 <- alloc 10
-    runHost $ do
+    onHost $ do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
             printf "Item %d> " i
-         -- item <- fget stdin
-         -- FIXME: fget should return `MonadRun m => m (Data a)`
-         --        instead of `Run (Data a)`?
-            item :: Data Int32 <- undefined
+            item :: Data Int32 <- lift $ fget stdin
             setArr i item input
 
         fetch d0 (0,9) input
@@ -38,14 +33,19 @@ simple = do
 f :: LocalArr 0 Int32 -> LocalArr 1 Int32 -> CoreComp 0 ()
 f input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- unsafeGetLArr i input
+        item :: Data Int32 <- getLArr i input
      -- Reading from a non-local array is forbidden
-     -- item' :: Data Int32 <- unsafeGetLArr i output
+     -- item' :: Data Int32 <- getLArr i output
         setLArr i (item + 1) output
 
 g :: forall (coreId :: Nat).
      LocalArr coreId Int32 -> LocalArr (coreId + 1) Int32 -> CoreComp coreId ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- unsafeGetLArr i input
-        setLArr i (item * 2) output
+        item :: Data Int32 <- getArr i input
+        setArr i (item * 2) output
+
+
+------------------------------------------------------------
+
+testAll = icompileAll `onParallella` simple

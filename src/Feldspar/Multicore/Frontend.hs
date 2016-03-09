@@ -1,41 +1,38 @@
-module Feldspar.Multicore.Frontend where
+module Feldspar.Multicore.Frontend
+    ( alloc, onHost
+    , fetch, flush, onCore
+    )where
 
 import Control.Monad.Operational.Higher
+import Control.Monad.Trans
+
+import Data.VirtualContainer
 
 import Feldspar
+import Feldspar.Run
 import Feldspar.Multicore.Representation
 
-import GHC.TypeLits
+
+--------------------------------------------------------------------------------
+-- Host layer
+--------------------------------------------------------------------------------
+
+fetch :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
+fetch dst range = Host . singleInj . Fetch dst range
+
+flush :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
+flush src range = Host . singleInj . Flush src range
+
+onCore :: CoreId -> Comp () -> Host ()
+onCore coreId = Host . singleInj . OnCore coreId
 
 
--- TODO: do we need to add constraints on `a` below?
+--------------------------------------------------------------------------------
+-- Allocation layer
+--------------------------------------------------------------------------------
 
-alloc :: forall (coreId :: Nat) a. Size -> AllocHost (LocalArr coreId a)
-alloc size = singleInj $ Alloc size
+alloc :: SmallType a => CoreId -> Size -> AllocHost (Arr a)
+alloc coreId = AllocHost . singleE . Alloc coreId
 
-runHost :: Host a -> AllocHost a
-runHost = singleInj . RunHost
-
-fetch :: forall (coreId :: Nat) a. LocalArr coreId a -> Range -> Arr a -> Host ()
-fetch localArr range = Host . singleInj . Fetch localArr range
-
-flush :: forall (coreId :: Nat) a. LocalArr coreId a -> Range -> Arr a -> Host ()
-flush localArr range = Host . singleInj . Flush localArr range
-
-onCore :: MonadComp m => m () -> Host ()
-onCore = Host . singleInj . OnCore
-
-
--- TODO: implement these functions
-
-getLArr :: forall (coreId :: Nat) a m. Syntax a =>
-    Data Index -> LocalArr coreId (Internal a) -> CoreComp coreId a
-getLArr i = undefined
-
-unsafeGetLArr :: forall (coreId :: Nat) a m. Syntax a =>
-    Data Index -> LocalArr coreId (Internal a) -> CoreComp coreId a
-unsafeGetLArr i = undefined
-
-setLArr :: forall (coreId :: Nat) a m. (Syntax a, MonadComp m) =>
-    Data Index -> a -> LocalArr coreId (Internal a) -> m ()
-setLArr = undefined
+onHost :: Host a -> AllocHost a
+onHost = AllocHost . singleE . OnHost

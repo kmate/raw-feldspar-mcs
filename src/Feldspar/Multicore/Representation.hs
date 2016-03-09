@@ -2,135 +2,104 @@ module Feldspar.Multicore.Representation where
 
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
-
-import Data.ALaCarte
 import Data.Word
 
 import Feldspar
-import Feldspar.Representation
-import Feldspar.Run.Frontend
+import Feldspar.Run
+import Feldspar.Run.Concurrent
 import Feldspar.Run.Representation
 
-import GHC.TypeLits
-
+import qualified Language.Embedded.CExp as Exp
+import qualified Language.Embedded.Expression as Exp
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
--- NOTE: this shoud be used instead of Nat when GHC promotes kind synonyms
--- type CoreId = Nat
-type Size   = Word32
-type Range  = (Data Index, Data Index)
-
-data LocalArr (coreId :: Nat) a
-    = LocalArr
-
-
---------------------------------------------------------------------------------
--- Core layer
---------------------------------------------------------------------------------
-
-data LocalArrCMD (prog :: * -> *) a
-  where
-    GetLArr       :: Data Index -> LocalArr coreId a -> LocalArrCMD prog a
-    UnsafeGetLArr :: Data Index -> LocalArr coreId a -> LocalArrCMD prog a
-    SetLArr       :: Data Index -> a -> LocalArr coreId a -> LocalArrCMD prog ()
-
-instance HFunctor LocalArrCMD
-  where
-    hfmap _ (GetLArr       i arr)   = GetLArr i arr
-    hfmap _ (UnsafeGetLArr i arr)   = UnsafeGetLArr i arr
-    hfmap _ (SetLArr       i v arr) = SetLArr i v arr
-
-
-type CoreCompCMD
-    =   LocalArrCMD
-    :+: CompCMD
-
-newtype CoreComp (coreId :: Nat) a
-    = CoreComp { unCoreComp :: ProgramT CoreCompCMD Comp a }
-        deriving (Functor, Applicative, Monad)
-
-
-type instance IExp (CoreCompCMD)       = Data
-type instance IExp (CoreCompCMD :+: i) = Data
-
-instance MonadComp (CoreComp coreId)
-  where
-    liftComp        = CoreComp . lift
-    iff c t f       = CoreComp $ Imp.iff c (unCoreComp t) (unCoreComp f)
-    for  range body = CoreComp $ Imp.for range (unCoreComp . body)
-    while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
+type CoreId     = Word32
+type Size       = Word32
+type IndexRange = (Data Index, Data Index)
 
 
 --------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
-data MulticoreCMD (prog :: * -> *) a
+data HostCMD (prog :: * -> *) a
   where
-    Fetch  :: LocalArr coreId a -> Range -> Arr a -> MulticoreCMD prog ()
-    Flush  :: LocalArr coreId a -> Range -> Arr a -> MulticoreCMD prog ()
-    OnCore :: MonadComp m => m () -> MulticoreCMD prog ()
+    Fetch  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    Flush  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
+    OnCore :: CoreId -> Comp () -> HostCMD prog ()
 
-instance HFunctor MulticoreCMD
+instance HFunctor HostCMD
   where
-    hfmap _ (Fetch localArr range arr) = Fetch localArr range arr
-    hfmap _ (Flush localArr range arr) = Flush localArr range arr
-    hfmap _ (OnCore coreComp)   = OnCore coreComp
+    hfmap _ (Fetch dst range src) = Fetch dst range src
+    hfmap _ (Flush src range dst) = Flush src range dst
+    hfmap _ (OnCore coreId comp)  = OnCore coreId comp
 
 
-type HostCMD
-    =   MulticoreCMD
-    :+: RunCMD
+newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
+  deriving (Functor, Applicative, Monad, MonadTrans)
 
--- FIXME: remove the constant below and hide the core id parameter
-newtype Host a = Host { unHost :: ProgramT HostCMD (CoreComp 42) a }
-  deriving (Functor, Applicative, Monad)
+type Host = HostT Run
 
+runHost :: Host a -> Run a
+runHost = interpretT id . unHost
 
-type instance IExp (HostCMD)       = Data
-type instance IExp (HostCMD :+: i) = Data
 
 instance MonadComp Host where
-    liftComp        = Host . lift . liftComp
-    iff c t f       = Host $ Imp.iff c (unHost t) (unHost f)
-    for  range body = Host $ Imp.for range (unHost . body)
-    while cont body = Host $ Imp.while (unHost cont) (unHost body)
+    liftComp        = lift . liftComp
+    iff cond t f    = lift $ iff cond (runHost t) (runHost f)
+    for range body  = lift $ for range (runHost . body)
+    while cont body = lift $ while (runHost cont) (runHost body)
+
+
+type instance IExp HostCMD         = Data
+type instance IExp (HostCMD :+: i) = Data
 
 instance (a ~ ()) => PrintfType (Host a)
   where
-    fprf h form = Host . singleE . Imp.FPrintf h form . reverse
+    fprf h form = lift . Run . singleE . Imp.FPrintf h form . reverse
 
--- FIXME: complete or remove MonadRun instance
-instance MonadRun Host where
-    liftRun = undefined
+
+runHostCMD :: HostCMD Run a -> Run a
+runHostCMD (Fetch dst (lower, upper) src) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr i src
+        setArr (i - lower) item dst
+runHostCMD (Flush src (lower, upper) dst) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr (i - lower) src
+        setArr i item dst
+runHostCMD (OnCore coreId comp) = void $ fork $liftRun comp
+
+instance Interp HostCMD Run where interp = runHostCMD
 
 
 --------------------------------------------------------------------------------
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-data AllocCMD (prog :: * -> *) a
+data AllocHostCMD exp (prog :: * -> *) a
   where
-    Alloc :: Size -> AllocCMD prog (LocalArr coreId a)
+    Alloc  :: (Exp.VarPred exp a, SmallType a) => CoreId -> Size -> AllocHostCMD exp prog (Arr a)
+    OnHost :: Host a -> AllocHostCMD exp prog a
 
-instance HFunctor AllocCMD
+instance HFunctor (AllocHostCMD exp)
   where
-    hfmap _ (Alloc size) = Alloc size
+    hfmap _ (Alloc coreId size) = Alloc coreId size
+    hfmap _ (OnHost host)       = OnHost host
+
+type instance IExp (AllocHostCMD e)       = e
+type instance IExp (AllocHostCMD e :+: i) = e
+
+newtype AllocHost a = AllocHost { unAllocHost :: Program (AllocHostCMD Exp.CExp) a }
+  deriving (Functor, Applicative, Monad)
 
 
-data RunHostCMD (prog :: * -> *) a
-  where
-    RunHost :: Host a -> RunHostCMD prog a
+runAllocHostCMD :: (AllocHostCMD exp) Run a -> Run a
+runAllocHostCMD (Alloc coreId size) = newArr (value size)
+runAllocHostCMD (OnHost host)       = runHost host
 
-instance HFunctor RunHostCMD
-  where
-    hfmap _ (RunHost host) = RunHost host
+instance Interp (AllocHostCMD exp) Run where interp = runAllocHostCMD
 
-
-type AllocHostCMD
-    =   AllocCMD
-    :+: RunHostCMD
-
-type AllocHost a = Program AllocHostCMD a
+instance MonadRun AllocHost where liftRun = interpret . unAllocHost
