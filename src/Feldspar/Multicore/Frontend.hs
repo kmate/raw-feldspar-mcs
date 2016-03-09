@@ -29,7 +29,7 @@ fetch :: (KnownNat coreId, SmallType a)
 fetch dst range = Host . singleInj . Fetch dst range
 
 flush :: (KnownNat coreId, SmallType a)
-      =>LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+      => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
 flush src range = Host . singleInj . Flush src range
 
 onCore :: KnownNat coreId => CoreComp coreId () -> Host ()
