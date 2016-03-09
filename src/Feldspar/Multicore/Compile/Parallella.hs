@@ -131,7 +131,7 @@ compHostCMD (OnCore comp) = do
         ]
 
 getCoreCompCoreId :: forall (coreId :: Nat) a . KnownNat coreId
-           => CoreComp coreId a-> CoreId
+                  => CoreComp coreId a-> CoreId
 getCoreCompCoreId cmd = fromIntegral $ natVal (Proxy :: Proxy coreId)
 
 
