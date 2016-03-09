@@ -39,7 +39,6 @@ onParallella action
 --------------------------------------------------------------------------------
 
 
--- IDEA: write an abstraction layer above ESDK to make the code generation easier?
 -- TODO: add only the required number of cores to the group?
 wrapESDK :: Allocator a -> Run a
 wrapESDK program = do
@@ -53,7 +52,7 @@ wrapESDK program = do
                       , valArg (value 3 :: Data Int32)
                       , valArg (value 3 :: Data Int32) ]
     callProc "e_reset_group" [ groupAddr ]
-    result <- (flip evalStateT) (start groupAddr) program
+    result <- evalStateT program (start groupAddr)
     callProc "e_close" [ groupAddr ]
     callProc "e_finalize" []
     return result
@@ -66,45 +65,46 @@ compAllocHostCMD cmd@(Alloc coreId size) = do
     -- can we use sizeof() in C + addition of previous addresses?
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
-    lift $ addDefinition [cedecl| volatile $ty:ty * const $id:name = $addr; |]
+    lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     lift $ mkArrayRef name
 compAllocHostCMD (OnHost host) = do
     s <- get
-    lift $ (flip evalStateT) s
+    lift $ flip evalStateT s
          $ interpretWithMonadT compHostCMD lift
-         $ unHost $ host
+         $ unHost host
 
 
--- IDEA: create a wrapper macro for e_write and e_read
--- fetch(g, r, c, dst, src, lower, upper) \
---   e_write(g, r, c, dst, src + lower, (upper - lower + 1) * sizeof(*dst))
 compHostCMD :: HostCMD Allocator a -> Allocator a
 compHostCMD (Fetch dst (lower, upper) src) = do
     groupAddr <- gets group
     let srcName = arrayRefName src
         dstName = arrayRefName dst
     (r, c) <- gets $ groupCoordsForName dstName
-    lift $ callProc "e_write"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc "e_fetch"
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
         , arrArg dst
         , arrArg src
-        -- e_write(&group, 0, 0, d0, input, N * sizeof(uint32_t));
-        {- TODO: add size arg and offset to source -} ]
+        , valArg lower
+        , valArg upper
+        ]
 compHostCMD (Flush src (lower, upper) dst) = do
     groupAddr <- gets group
     let srcName = arrayRefName src
         dstName = arrayRefName dst
     (r, c) <- gets $ groupCoordsForName srcName
-    lift $ callProc "e_read"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc "e_flush"
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
         , arrArg src
         , arrArg dst
-        -- e_read(&group, 0, 2, d2, output, N * sizeof(uint32_t));
-        {- TODO: add size arg and offset to destination -} ]
+        , valArg lower
+        , valArg upper
+        ]
 compHostCMD (OnCore coreId comp) = do
     (coreName, coreDefs) <- compileCore coreId comp
     -- FIXME: these definitions should go into another translation unit
@@ -146,7 +146,7 @@ compileCore coreId comp = do
 makeGlobalArr :: CoreId -> Name -> GlobalAddress -> Allocator Definition
 makeGlobalArr coreId name addr = do
     Just ty <- Map.lookup name <$> gets typeMap
-    return [cedecl| volatile $ty:ty * const $id:name = $addr; |]
+    return [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr; |]
 
 
 --------------------------------------------------------------------------------
@@ -159,7 +159,7 @@ getResultType :: (VarPred exp a, CompExp exp)
 getResultType cmd = do
     let resultType = compTypeFromCMD cmd (proxyArg cmd)
         (ty, env) = C.runCGen resultType (C.defaultCEnv C.Flags)
-    mapM addInclude (Set.toList (C._includes env))
+    mapM_ addInclude (Set.toList (C._includes env))
     return ty
 
 mkArrayRef :: SmallType a => VarId -> Run (Arr a)
@@ -231,7 +231,7 @@ groupCoord coreId
     | otherwise = error $ "invalid core id: " ++ show coreId
 
 isValidCoreId :: CoreId -> Bool
-isValidCoreId = (flip elem) [0..15]
+isValidCoreId = flip elem [0..15]
 
 systemCoord :: CoreId -> CoreCoords
 systemCoord coreId = let (gr, gc) = groupCoord coreId in (gr + 32, gc + 8)
