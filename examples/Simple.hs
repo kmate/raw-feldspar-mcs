@@ -10,7 +10,7 @@ simple = do
     d2 <- alloc 2 10
     onHost $ do
         input :: Arr Int32 <- newArr 10
-        for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
+        for (0, 1, Incl 9) $ \i -> do
             printf "Item %d> " i
             item :: Data Int32 <- lift $ fget stdin
             setArr i item input

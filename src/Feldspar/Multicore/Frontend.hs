@@ -1,7 +1,4 @@
-module Feldspar.Multicore.Frontend
-    ( alloc, onHost
-    , fetch, flush, onCore
-    )where
+module Feldspar.Multicore.Frontend where
 
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
