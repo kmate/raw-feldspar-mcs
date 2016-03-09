@@ -39,3 +39,8 @@ g input output =
     for (0, 1, Incl 9) $ \i -> do
         item :: Data Int32 <- getArr i input
         setArr i (item * 2) output
+
+
+------------------------------------------------------------
+
+testAll = icompileAll `onParallella` simple
