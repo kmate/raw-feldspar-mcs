@@ -61,8 +61,8 @@ wrapESDK program = do
 compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) Allocator a -> Allocator a
 compAllocHostCMD cmd@(Alloc coreId size) = do
     ty <- lift $ getResultType cmd
-    let byteSize = size -- FIXME: calculate byte size from element type
-    -- can we use sizeof() in C + addition of previous addresses?
+    let byteSize = size * 8 -- FIXME: calculate byte size from element type
+    -- can we use sizeof() in C + addition of previous addresses? (shortly: no.)
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
@@ -140,7 +140,10 @@ compileCore coreId comp = do
         let gaddr = if coreId' Prelude.== coreId then addr else addr `toGlobal` coreId'
         makeGlobalArr coreId name gaddr
 
-    return ("core" ++ show coreId, coreMainDef : arrayDefs)
+    return (moduleName coreId, arrayDefs ++ [coreMainDef])
+
+moduleName :: CoreId -> String
+moduleName coreId = "core" ++ show coreId
 
 makeGlobalArr :: CoreId -> Name -> GlobalAddress -> Allocator Definition
 makeGlobalArr coreId name addr = do
@@ -155,10 +158,10 @@ makeGlobalArr coreId name addr = do
 getResultType :: (VarPred exp a, CompExp exp)
         => (AllocHostCMD exp) Allocator (proxy a)
         -> Run C.Type
-getResultType cmd = do
+getResultType cmd@(Alloc coreId _) = do
     let resultType = compTypeFromCMD cmd (proxyArg cmd)
         (ty, env) = C.runCGen resultType (C.defaultCEnv C.Flags)
-    mapM_ addInclude (Set.toList (C._includes env))
+    mapM_ (inModule (moduleName coreId) .  addInclude) (Set.toList (C._includes env))
     return ty
 
 mkArrayRef :: SmallType a => VarId -> Run (Arr a)
