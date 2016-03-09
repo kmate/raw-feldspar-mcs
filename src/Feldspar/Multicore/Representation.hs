@@ -1,5 +1,9 @@
+{-# LANGUAGE CPP #-}
 module Feldspar.Multicore.Representation where
 
+#if __GLASGOW_HASKELL__ < 710
+import Control.Applicative
+#endif
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
 import Data.Word
@@ -36,6 +40,7 @@ instance KnownNat coreId => MonadComp (CoreComp coreId)
     iff cond t f    = CoreComp $ iff cond (unCoreComp t) (unCoreComp f)
     for range body  = CoreComp $ for range (unCoreComp . body)
     while cont body = CoreComp $ while (unCoreComp cont) (unCoreComp body)
+
 
 --------------------------------------------------------------------------------
 -- Host layer
@@ -117,7 +122,7 @@ newtype AllocHost a = AllocHost { unAllocHost :: Program (AllocHostCMD Exp.CExp)
 
 
 runAllocHostCMD :: (AllocHostCMD exp) Run a -> Run a
-runAllocHostCMD (Alloc size)  = fmap LocalArr $ newArr (value size)
+runAllocHostCMD (Alloc size)  = LocalArr <$> newArr (value size)
 runAllocHostCMD (OnHost host) = runHost host
 
 instance Interp (AllocHostCMD exp) Run where interp = runAllocHostCMD
