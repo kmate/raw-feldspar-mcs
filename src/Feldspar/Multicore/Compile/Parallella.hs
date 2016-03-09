@@ -159,7 +159,7 @@ makeArrayDecl coreId typeMap (name, Just (coreId', addr)) =
 getResultType :: (VarPred exp a, CompExp exp)
               => (AllocHostCMD exp) Allocator (proxy a)
               -> Run (C.Type, Set.Set String)
-getResultType cmd@(Alloc coreId _) = do
+getResultType cmd = do
     let resultType = compTypeFromCMD cmd (proxyArg cmd)
         (ty, env) = C.runCGen resultType (C.defaultCEnv C.Flags)
     return (ty, C._includes env)
