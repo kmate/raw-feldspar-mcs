@@ -107,8 +107,7 @@ compHostCMD (Flush src (lower, upper) dst) = do
         ]
 compHostCMD (OnCore coreId comp) = do
     (coreName, coreDefs) <- compileCore coreId comp
-    -- FIXME: these definitions should go into another translation unit
-    lift $ mapM addDefinition coreDefs
+    lift $ mapM (inModule coreName . addDefinition) coreDefs
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -141,7 +140,7 @@ compileCore coreId comp = do
         let gaddr = if coreId' Prelude.== coreId then addr else addr `toGlobal` coreId'
         makeGlobalArr coreId name gaddr
 
-    return ("core" ++ show coreId, arrayDefs ++ [coreMainDef])
+    return ("core" ++ show coreId, coreMainDef : arrayDefs)
 
 makeGlobalArr :: CoreId -> Name -> GlobalAddress -> Allocator Definition
 makeGlobalArr coreId name addr = do
