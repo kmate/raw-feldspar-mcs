@@ -58,12 +58,13 @@ wrapESDK program = do
     return result
 
 
+-- TODO: allocate only the arrays that are really used?
 compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) Allocator a -> Allocator a
 compAllocHostCMD cmd@(Alloc coreId size) = do
-    (ty, incl) <- lift $ getResultType cmd
     let byteSize = size * 8 -- FIXME: calculate byte size from element type
     -- can we use sizeof() in C + addition of previous addresses? (shortly: no.)
     (addr, name) <- state (allocate coreId byteSize)
+    (ty, incl) <- lift $ getResultType cmd
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
