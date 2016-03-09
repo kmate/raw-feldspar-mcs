@@ -1,12 +1,8 @@
 module Feldspar.Multicore.Frontend where
 
 import Control.Monad.Operational.Higher
-import Control.Monad.Trans
-
-import Data.VirtualContainer
 
 import Feldspar
-import Feldspar.Run
 import Feldspar.Multicore.Representation
 
 
