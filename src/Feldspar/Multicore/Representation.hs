@@ -3,6 +3,7 @@ module Feldspar.Multicore.Representation where
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
 import Data.Word
+import GHC.TypeLits
 
 import Feldspar
 import Feldspar.Run
@@ -21,20 +22,38 @@ type IndexRange = (Data Index, Data Index)
 
 
 --------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+newtype LocalArr (coreId :: Nat) a = LocalArr { unLocalArr :: Arr a }
+
+newtype CoreComp (coreId :: Nat) a = CoreComp { unCoreComp :: Comp a }
+  deriving (Functor, Applicative, Monad)
+
+instance KnownNat coreId => MonadComp (CoreComp coreId)
+  where
+    liftComp        = CoreComp . liftComp
+    iff cond t f    = CoreComp $ iff cond (unCoreComp t) (unCoreComp f)
+    for range body  = CoreComp $ for range (unCoreComp . body)
+    while cont body = CoreComp $ while (unCoreComp cont) (unCoreComp body)
+
+--------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
 data HostCMD (prog :: * -> *) a
   where
-    Fetch  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
-    Flush  :: SmallType a => Arr a -> IndexRange -> Arr a -> HostCMD prog ()
-    OnCore :: CoreId -> Comp () -> HostCMD prog ()
+    Fetch  :: (KnownNat coreId, SmallType a)
+           => LocalArr coreId a -> IndexRange -> Arr a -> HostCMD prog ()
+    Flush  :: (KnownNat coreId, SmallType a)
+           => LocalArr coreId a -> IndexRange -> Arr a -> HostCMD prog ()
+    OnCore :: KnownNat coreId => CoreComp coreId () -> HostCMD prog ()
 
 instance HFunctor HostCMD
   where
     hfmap _ (Fetch dst range src) = Fetch dst range src
     hfmap _ (Flush src range dst) = Flush src range dst
-    hfmap _ (OnCore coreId comp)  = OnCore coreId comp
+    hfmap _ (OnCore comp)         = OnCore comp
 
 
 newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
@@ -65,12 +84,12 @@ runHostCMD :: HostCMD Run a -> Run a
 runHostCMD (Fetch dst (lower, upper) src) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr i src
-        setArr (i - lower) item dst
+        setArr (i - lower) item (unLocalArr dst)
 runHostCMD (Flush src (lower, upper) dst) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower) src
+        item :: Data a <- getArr (i - lower) (unLocalArr src)
         setArr i item dst
-runHostCMD (OnCore coreId comp) = void $ fork $liftRun comp
+runHostCMD (OnCore comp) = void $ fork $ liftRun $ unCoreComp comp
 
 instance Interp HostCMD Run where interp = runHostCMD
 
@@ -81,13 +100,14 @@ instance Interp HostCMD Run where interp = runHostCMD
 
 data AllocHostCMD exp (prog :: * -> *) a
   where
-    Alloc  :: (Exp.VarPred exp a, SmallType a) => CoreId -> Size -> AllocHostCMD exp prog (Arr a)
+    Alloc  :: (KnownNat coreId, Exp.VarPred exp a, SmallType a)
+           => Size -> AllocHostCMD exp prog (LocalArr coreId a)
     OnHost :: Host a -> AllocHostCMD exp prog a
 
 instance HFunctor (AllocHostCMD exp)
   where
-    hfmap _ (Alloc coreId size) = Alloc coreId size
-    hfmap _ (OnHost host)       = OnHost host
+    hfmap _ (Alloc size)  = Alloc size
+    hfmap _ (OnHost host) = OnHost host
 
 type instance IExp (AllocHostCMD e)       = e
 type instance IExp (AllocHostCMD e :+: i) = e
@@ -97,8 +117,8 @@ newtype AllocHost a = AllocHost { unAllocHost :: Program (AllocHostCMD Exp.CExp)
 
 
 runAllocHostCMD :: (AllocHostCMD exp) Run a -> Run a
-runAllocHostCMD (Alloc coreId size) = newArr (value size)
-runAllocHostCMD (OnHost host)       = runHost host
+runAllocHostCMD (Alloc size)  = fmap LocalArr $ newArr (value size)
+runAllocHostCMD (OnHost host) = runHost host
 
 instance Interp (AllocHostCMD exp) Run where interp = runAllocHostCMD
 

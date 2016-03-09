@@ -12,7 +12,7 @@ simple = do
     d2 <- alloc 10
     onHost $ do
         input :: Arr Int32 <- newArr 10
-        for (0, 1, Incl 9) $ \(i :: Data Word32) -> do
+        for (0, 1, Incl 9) $ \i -> do
             printf "Item %d> " i
             item :: Data Int32 <- lift $ fget stdin
             setArr i item input
@@ -38,12 +38,12 @@ f input output =
      -- item' :: Data Int32 <- getLArr i output
         setLArr i (item + 1) output
 
-g :: forall (coreId :: Nat).
-     LocalArr coreId Int32 -> LocalArr (coreId + 1) Int32 -> CoreComp coreId ()
+g :: forall (coreId :: Nat) . (KnownNat coreId, KnownNat (coreId + 1))
+  => LocalArr coreId Int32 -> LocalArr (coreId + 1) Int32 -> CoreComp coreId ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item * 2) output
+        item :: Data Int32 <- getLArr i input
+        setLArr i (item * 2) output
 
 
 ------------------------------------------------------------

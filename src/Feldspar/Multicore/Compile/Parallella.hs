@@ -11,8 +11,10 @@ import Control.Monad.State
 import Data.Bits
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Proxy
 import qualified Data.Set as Set
 import Data.VirtualContainer
+import GHC.TypeLits
 
 import Feldspar.Multicore.Representation
 import Feldspar.Representation
@@ -60,7 +62,8 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) Allocator a -> Allocator a
-compAllocHostCMD cmd@(Alloc coreId size) = do
+compAllocHostCMD cmd@(Alloc size) = do
+    let coreId = getAllocHostCoreId cmd
     let byteSize = size * 8 -- FIXME: calculate byte size from element type
     -- can we use sizeof() in C + addition of previous addresses? (shortly: no.)
     (addr, name) <- state (allocate coreId byteSize)
@@ -75,26 +78,30 @@ compAllocHostCMD (OnHost host) = do
          $ interpretWithMonadT compHostCMD lift
          $ unHost host
 
+getAllocHostCoreId :: forall (coreId :: Nat) exp prog a . KnownNat coreId
+                   => AllocHostCMD exp prog (LocalArr coreId a) -> CoreId
+getAllocHostCoreId _ = fromIntegral $ natVal (Proxy :: Proxy coreId)
+
 
 compHostCMD :: HostCMD Allocator a -> Allocator a
 compHostCMD (Fetch dst (lower, upper) src) = do
     groupAddr <- gets group
     let srcName = arrayRefName src
-        dstName = arrayRefName dst
+        dstName = arrayRefName (unLocalArr dst)
     (r, c) <- gets $ groupCoordsForName dstName
     lift $ addInclude "<e-feldspar.h>"
     lift $ callProc "e_fetch"
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg dst
+        , arrArg (unLocalArr dst)
         , arrArg src
         , valArg lower
         , valArg upper
         ]
 compHostCMD (Flush src (lower, upper) dst) = do
     groupAddr <- gets group
-    let srcName = arrayRefName src
+    let srcName = arrayRefName (unLocalArr src)
         dstName = arrayRefName dst
     (r, c) <- gets $ groupCoordsForName srcName
     lift $ addInclude "<e-feldspar.h>"
@@ -102,15 +109,16 @@ compHostCMD (Flush src (lower, upper) dst) = do
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg src
+        , arrArg (unLocalArr src)
         , arrArg dst
         , valArg lower
         , valArg upper
         ]
-compHostCMD (OnCore coreId comp) = do
+compHostCMD (OnCore comp) = do
+    let coreId = getCoreCompCoreId comp
     let moduleName = "core" ++ show coreId
     s <- get
-    lift $ inModule moduleName (compileCore coreId comp s)
+    lift $ inModule moduleName (compileCore coreId (unCoreComp comp) s)
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -121,6 +129,10 @@ compHostCMD (OnCore coreId comp) = do
         , valArg $ value c
         , valArg (value 1 :: Data Int32) --  E_TRUE
         ]
+
+getCoreCompCoreId :: forall (coreId :: Nat) a . KnownNat coreId
+           => CoreComp coreId a-> CoreId
+getCoreCompCoreId cmd = fromIntegral $ natVal (Proxy :: Proxy coreId)
 
 
 compileCore :: CoreId -> Comp () -> AllocatorState -> Run ()
@@ -159,13 +171,13 @@ makeArrayDecl coreId typeMap (name, Just (coreId', addr)) =
 getResultType :: (VarPred exp a, CompExp exp)
         => (AllocHostCMD exp) Allocator (proxy a)
         -> Run (C.Type, Set.Set String)
-getResultType cmd@(Alloc coreId _) = do
+getResultType cmd = do
     let resultType = compTypeFromCMD cmd (proxyArg cmd)
         (ty, env) = C.runCGen resultType (C.defaultCEnv C.Flags)
     return (ty, C._includes env)
 
-mkArrayRef :: SmallType a => VarId -> Run (Arr a)
-mkArrayRef name = return $ Arr $ Actual $ Imp.ArrComp name
+mkArrayRef :: SmallType a => VarId -> Run (LocalArr coreId a)
+mkArrayRef name = return $ LocalArr $ Arr $ Actual $ Imp.ArrComp name
 
 arrayRefName :: Arr a -> VarId
 arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
