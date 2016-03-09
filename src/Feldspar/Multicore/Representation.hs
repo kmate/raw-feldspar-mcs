@@ -53,7 +53,7 @@ instance MonadComp Host where
     while cont body = lift $ while (runHost cont) (runHost body)
 
 
-type instance IExp (HostCMD)       = Data
+type instance IExp HostCMD         = Data
 type instance IExp (HostCMD :+: i) = Data
 
 instance (a ~ ()) => PrintfType (Host a)
@@ -70,7 +70,7 @@ runHostCMD (Flush src (lower, upper) dst) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr (i - lower) src
         setArr i item dst
-runHostCMD (OnCore coreId comp) = fork (liftRun comp) >> return ()
+runHostCMD (OnCore coreId comp) = void $ fork $liftRun comp
 
 instance Interp HostCMD Run where interp = runHostCMD
 
