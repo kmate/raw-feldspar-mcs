@@ -60,11 +60,12 @@ wrapESDK program = do
 
 compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) Allocator a -> Allocator a
 compAllocHostCMD cmd@(Alloc coreId size) = do
-    ty <- lift $ getResultType cmd
+    (ty, incl) <- lift $ getResultType cmd
     let byteSize = size * 8 -- FIXME: calculate byte size from element type
     -- can we use sizeof() in C + addition of previous addresses? (shortly: no.)
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
+    modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     lift $ mkArrayRef name
 compAllocHostCMD (OnHost host) = do
@@ -106,13 +107,14 @@ compHostCMD (Flush src (lower, upper) dst) = do
         , valArg upper
         ]
 compHostCMD (OnCore coreId comp) = do
-    (coreName, coreDefs) <- compileCore coreId comp
-    lift $ mapM (inModule coreName . addDefinition) coreDefs
+    let moduleName = "core" ++ show coreId
+    s <- get
+    lift $ inModule moduleName (compileCore coreId comp s)
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
     lift $ callProc "e_load"
-        [ strArg $ coreName ++ ".srec"
+        [ strArg $ moduleName ++ ".srec"
         , groupAddr
         , valArg $ value r
         , valArg $ value c
@@ -120,35 +122,33 @@ compHostCMD (OnCore coreId comp) = do
         ]
 
 
-compileCore :: CoreId -> Comp () -> Allocator (Name, [Definition])
-compileCore coreId comp = do
+compileCore :: CoreId -> Comp () -> AllocatorState -> Run ()
+compileCore coreId comp AllocatorState{..} = do
     -- compile the core program and collect the definition of main and used variables
     let (_, env) = C.runCGen
             (C.wrapMain $ interpret $ lowerTop $ liftRun $ comp)
             (C.defaultCEnv C.Flags)
-        [coreMainDef] = C._globals env
-        usedVars = Set.toList $ case Map.lookup "main" $ C._funUsedVars env of
-            Just vars -> vars
-            _         -> Set.empty
+        usedVars = maybe [] Set.toList (Map.lookup "main" $ C._funUsedVars env)
 
     -- collect pre-allocated scratchpad arrays
-    nameMap <- gets nameMap
-    let arrays = filter (isJust . snd)
+    let usedArrays = filter (isJust . snd)
                $ map (\(C.Id name _) -> (name, Map.lookup name nameMap)) usedVars
-    arrayDefs <- forM arrays $ \(name, Just (coreId', addr)) -> do
-        -- convert address to global when the given array is on another core
-        let gaddr = if coreId' Prelude.== coreId then addr else addr `toGlobal` coreId'
-        makeGlobalArr coreId name gaddr
+        arrayDefs = map (makeArrayDecl coreId typeMap) usedArrays
 
-    return (moduleName coreId, arrayDefs ++ [coreMainDef])
+    -- merge type includes and array definitions
+    let typeIncludes = maybe Set.empty id (Map.lookup coreId inclMap)
+        env' = env { C._includes = C._includes env `Set.union` typeIncludes
+                   , C._globals  = C._globals env ++ reverse arrayDefs }
 
-moduleName :: CoreId -> String
-moduleName coreId = "core" ++ show coreId
+    -- merge contents to the core module
+    mapM_ addDefinition (C.cenvToCUnit env')
 
-makeGlobalArr :: CoreId -> Name -> GlobalAddress -> Allocator Definition
-makeGlobalArr coreId name addr = do
-    Just ty <- Map.lookup name <$> gets typeMap
-    return [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr; |]
+makeArrayDecl :: CoreId -> TypeMap -> (Name, Maybe (CoreId, LocalAddress)) -> Definition
+makeArrayDecl coreId typeMap (name, Just (coreId', addr)) =
+     let Just ty = Map.lookup name typeMap
+     -- convert address to global when the given array is on another core
+         addr' = if coreId' Prelude.== coreId then addr else addr `toGlobal` coreId'
+     in  [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
 
 
 --------------------------------------------------------------------------------
@@ -157,12 +157,11 @@ makeGlobalArr coreId name addr = do
 
 getResultType :: (VarPred exp a, CompExp exp)
         => (AllocHostCMD exp) Allocator (proxy a)
-        -> Run C.Type
+        -> Run (C.Type, Set.Set String)
 getResultType cmd@(Alloc coreId _) = do
     let resultType = compTypeFromCMD cmd (proxyArg cmd)
         (ty, env) = C.runCGen resultType (C.defaultCEnv C.Flags)
-    mapM_ (inModule (moduleName coreId) .  addInclude) (Set.toList (C._includes env))
-    return ty
+    return (ty, C._includes env)
 
 mkArrayRef :: SmallType a => VarId -> Run (Arr a)
 mkArrayRef name = return $ Arr $ Actual $ Imp.ArrComp name
@@ -180,12 +179,14 @@ type LocalAddress = Word32
 type AddressMap = Map.Map CoreId [(LocalAddress, Name)]
 type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
+type IncludeMap = Map.Map CoreId (Set.Set String)
 data AllocatorState = AllocatorState
     { group   :: FunArg Data
     , nextId  :: Int
     , addrMap :: AddressMap
     , nameMap :: NameMap
     , typeMap :: TypeMap
+    , inclMap :: IncludeMap
     }
 type Allocator = StateT AllocatorState Run
 
@@ -197,6 +198,7 @@ start g = AllocatorState
     , addrMap = Map.empty
     , nameMap = Map.empty
     , typeMap = Map.empty
+    , inclMap = Map.empty
     }
 
 allocate :: CoreId -> Size -> AllocatorState -> ((LocalAddress, Name), AllocatorState)
@@ -215,6 +217,12 @@ allocate coreId size s@AllocatorState{..} = (newEntry, s
 
 hasType :: Name -> C.Type -> AllocatorState -> AllocatorState
 hasType name ty s@AllocatorState{..} = s { typeMap = Map.insert name ty typeMap }
+
+includes :: CoreId -> Set.Set String -> AllocatorState -> AllocatorState
+includes coreId incl s@AllocatorState{..} = s { inclMap = Map.alter merge coreId inclMap }
+  where
+    merge (Just i) = Just $ i `Set.union` incl
+    merge _        = Just incl
 
 groupCoordsForName :: Name -> AllocatorState -> CoreCoords
 groupCoordsForName name AllocatorState{..}
