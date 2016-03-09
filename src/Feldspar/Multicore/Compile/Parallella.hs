@@ -10,6 +10,7 @@ import Control.Monad.Operational.Higher
 import Control.Monad.State
 import Data.Bits
 import qualified Data.Map as Map
+import Data.Maybe
 import qualified Data.Set as Set
 import Data.VirtualContainer
 
@@ -74,6 +75,9 @@ compAllocHostCMD (OnHost host) = do
          $ unHost $ host
 
 
+-- IDEA: create a wrapper macro for e_write and e_read
+-- fetch(g, r, c, dst, src, lower, upper) \
+--   e_write(g, r, c, dst, src + lower, (upper - lower + 1) * sizeof(*dst))
 compHostCMD :: HostCMD Allocator a -> Allocator a
 compHostCMD (Fetch dst (lower, upper) src) = do
     groupAddr <- gets group
@@ -116,28 +120,33 @@ compHostCMD (OnCore coreId comp) = do
         , valArg (value 1 :: Data Int32) --  E_TRUE
         ]
 
+
 compileCore :: CoreId -> Comp () -> Allocator (Name, [Definition])
 compileCore coreId comp = do
-    arrays <- Map.lookup coreId  <$> gets addrMap
-    globals <- case arrays of
-            Just addrs -> mapM (makeGlobalArr coreId) addrs
-            _          -> return []
-    let (coreMainDef, _) = C.runCGen
-            (wrapCore $ interpret $ lowerTop $ liftRun $ comp)
+    -- compile the core program and collect the definition of main and used variables
+    let (_, env) = C.runCGen
+            (C.wrapMain $ interpret $ lowerTop $ liftRun $ comp)
             (C.defaultCEnv C.Flags)
-    return ("core" ++ show coreId, globals ++ [coreMainDef])
+        [coreMainDef] = C._globals env
+        usedVars = Set.toList $ case Map.lookup "main" $ C._funUsedVars env of
+            Just vars -> vars
+            _         -> Set.empty
 
-makeGlobalArr :: CoreId -> (LocalAddress, Name) -> Allocator Definition
-makeGlobalArr coreId (addr, name) = do
+    -- collect pre-allocated scratchpad arrays
+    nameMap <- gets nameMap
+    let arrays = filter (isJust . snd)
+               $ map (\(C.Id name _) -> (name, Map.lookup name nameMap)) usedVars
+    arrayDefs <- forM arrays $ \(name, Just (coreId', addr)) -> do
+        -- convert address to global when the given array is on another core
+        let gaddr = if coreId' Prelude.== coreId then addr else addr `toGlobal` coreId'
+        makeGlobalArr coreId name gaddr
+
+    return ("core" ++ show coreId, arrayDefs ++ [coreMainDef])
+
+makeGlobalArr :: CoreId -> Name -> GlobalAddress -> Allocator Definition
+makeGlobalArr coreId name addr = do
     Just ty <- Map.lookup name <$> gets typeMap
-    let gaddr = addr `toGlobal` coreId
-    return [cedecl| volatile $ty:ty * const $id:name = $gaddr; |]
-
-wrapCore :: C.MonadC m => m () -> m Definition
-wrapCore prog = do
-    (_,uvs,params,items) <- C.inNewFunction $ prog -- >> C.addStm [cstm| return 0; |]
-    C.setUsedVars "main" uvs
-    return [cedecl| int main($params:params){ $items:items }|]
+    return [cedecl| volatile $ty:ty * const $id:name = $addr; |]
 
 
 --------------------------------------------------------------------------------
@@ -167,7 +176,7 @@ arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
 type Name = String
 type LocalAddress = Word32
 type AddressMap = Map.Map CoreId [(LocalAddress, Name)]
-type NameMap = Map.Map Name CoreId
+type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
 data AllocatorState = AllocatorState
     { group   :: FunArg Data
@@ -192,10 +201,11 @@ allocate :: CoreId -> Size -> AllocatorState -> ((LocalAddress, Name), Allocator
 allocate coreId size s@AllocatorState{..} = (newEntry, s
     { nextId = nextId + 1
     , addrMap = newAddrMap
-    , nameMap = Map.insert newName coreId nameMap
+    , nameMap = Map.insert newName (coreId, newAddress) nameMap
     })
   where
     newName = "spm" ++ show nextId
+    (newAddress, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . stepAddress) coreId addrMap
     stepAddress (Just addrs@((lastAddress, _):_)) = (lastAddress + size, newName) : addrs
@@ -206,7 +216,7 @@ hasType name ty s@AllocatorState{..} = s { typeMap = Map.insert name ty typeMap 
 
 groupCoordsForName :: Name -> AllocatorState -> CoreCoords
 groupCoordsForName name AllocatorState{..}
-    | Just coreId <- Map.lookup name nameMap =  groupCoord coreId
+    | Just (coreId, _) <- Map.lookup name nameMap =  groupCoord coreId
 
 
 --------------------------------------------------------------------------------
