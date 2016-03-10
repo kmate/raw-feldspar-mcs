@@ -178,7 +178,7 @@ arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
 
 type Name = String
 type LocalAddress = Word32
-type AddressMap = Map.Map CoreId [(LocalAddress, Name)]
+type AddressMap = Map.Map CoreId [(LocalAddress, LocalAddress, Name)]
 type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
@@ -204,18 +204,18 @@ start g = AllocatorState
     }
 
 allocate :: CoreId -> Size -> AllocatorState -> ((LocalAddress, Name), AllocatorState)
-allocate coreId size s@AllocatorState{..} = (newEntry, s
+allocate coreId size s@AllocatorState{..} = ((startAddress, newName), s
     { nextId = nextId + 1
     , addrMap = newAddrMap
-    , nameMap = Map.insert newName (coreId, newAddress) nameMap
+    , nameMap = Map.insert newName (coreId, startAddress) nameMap
     })
   where
     newName = "spm" ++ show nextId
-    (newAddress, _) = newEntry
+    (startAddress, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
-    newAddrMap = Map.alter (Just . stepAddress) coreId addrMap
-    stepAddress (Just addrs@((lastAddress, _):_)) = (lastAddress + size, newName) : addrs
-    stepAddress _ = [(bank2Base, newName)]
+    newAddrMap = Map.alter (Just . addAddress) coreId addrMap
+    addAddress (Just addrs@((_, next, _):_)) = (next, next + size, newName) : addrs
+    addAddress _ = [(bank2Base, bank2Base + size, newName)]
 
 hasType :: Name -> C.Type -> AllocatorState -> AllocatorState
 hasType name ty s@AllocatorState{..} = s { typeMap = Map.insert name ty typeMap }
