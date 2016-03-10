@@ -40,7 +40,6 @@ onParallella action
 -- Transformation over Run
 --------------------------------------------------------------------------------
 
-
 -- TODO: add only the required number of cores to the group?
 wrapESDK :: RunGen a -> Run a
 wrapESDK program = do
@@ -78,38 +77,10 @@ compAllocHostCMD (OnHost host) = do
 
 
 compHostCMD :: HostCMD RunGen a -> RunGen a
-compHostCMD (Fetch dst (lower, upper) src) = do
-    groupAddr <- gets group
-    let srcName = arrayRefName src
-        dstName = arrayRefName dst
-    (r, c) <- gets $ groupCoordsForName dstName
-    lift $ addInclude "<e-feldspar.h>"
-    lift $ callProc "e_fetch"
-        [ groupAddr
-        , valArg $ value r
-        , valArg $ value c
-        , arrArg dst
-        , arrArg src
-        , valArg lower
-        , valArg upper
-        ]
-compHostCMD (Flush src (lower, upper) dst) = do
-    groupAddr <- gets group
-    let srcName = arrayRefName src
-        dstName = arrayRefName dst
-    (r, c) <- gets $ groupCoordsForName srcName
-    lift $ addInclude "<e-feldspar.h>"
-    lift $ callProc "e_flush"
-        [ groupAddr
-        , valArg $ value r
-        , valArg $ value c
-        , arrArg src
-        , arrArg dst
-        , valArg lower
-        , valArg upper
-        ]
+compHostCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
+compHostCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
 compHostCMD (OnCore coreId comp) = do
-    compileCore coreId comp
+    compCore coreId comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -121,12 +92,28 @@ compHostCMD (OnCore coreId comp) = do
         , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
 
+compCopy :: SmallType a => String -> Arr a-> Arr a -> IndexRange -> RunGen ()
+compCopy op spm ram (lower, upper) = do
+    groupAddr <- gets group
+    let spmName = arrayRefName spm
+        ramName = arrayRefName ram
+    (r, c) <- gets $ groupCoordsForName spmName
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ groupAddr
+        , valArg $ value r
+        , valArg $ value c
+        , arrArg spm
+        , arrArg ram
+        , valArg lower
+        , valArg upper
+        ]
 
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
 
-compileCore :: CoreId -> Comp () -> RunGen ()
-compileCore coreId comp = do
+compCore :: CoreId -> Comp () -> RunGen ()
+compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
     let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop $ liftRun comp
 

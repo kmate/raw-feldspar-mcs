@@ -11,10 +11,10 @@ import Feldspar.Multicore.Representation
 --------------------------------------------------------------------------------
 
 fetch :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-fetch dst range = Host . singleInj . Fetch dst range
+fetch spm range = Host . singleInj . Fetch spm range
 
 flush :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-flush src range = Host . singleInj . Flush src range
+flush spm range = Host . singleInj . Flush spm range
 
 onCore :: CoreId -> Comp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId

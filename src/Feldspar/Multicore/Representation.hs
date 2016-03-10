@@ -32,8 +32,8 @@ data HostCMD (prog :: * -> *) a
 
 instance HFunctor HostCMD
   where
-    hfmap _ (Fetch dst range src) = Fetch dst range src
-    hfmap _ (Flush src range dst) = Flush src range dst
+    hfmap _ (Fetch spm range ram) = Fetch spm range ram
+    hfmap _ (Flush spm range ram) = Flush spm range ram
     hfmap _ (OnCore coreId comp)  = OnCore coreId comp
 
 
@@ -62,14 +62,14 @@ instance (a ~ ()) => PrintfType (Host a)
 
 
 runHostCMD :: HostCMD Run a -> Run a
-runHostCMD (Fetch dst (lower, upper) src) =
+runHostCMD (Fetch spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr i src
-        setArr (i - lower) item dst
-runHostCMD (Flush src (lower, upper) dst) =
+        item :: Data a <- getArr i ram
+        setArr (i - lower) item spm
+runHostCMD (Flush spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower) src
-        setArr i item dst
+        item :: Data a <- getArr (i - lower) spm
+        setArr i item ram
 runHostCMD (OnCore coreId comp) = void $ fork $liftRun comp
 
 instance Interp HostCMD Run where interp = runHostCMD
