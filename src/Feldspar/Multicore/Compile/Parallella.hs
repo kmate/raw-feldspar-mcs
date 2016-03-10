@@ -11,6 +11,7 @@ import Control.Monad.State
 import Data.Bits
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Proxy
 import qualified Data.Set as Set
 import Data.VirtualContainer
 
@@ -22,6 +23,7 @@ import Feldspar.Run.Compile
 import qualified Language.C.Monad as C
 import qualified Language.C.Quote as C
 import qualified Language.C.Syntax as C
+import qualified Language.Embedded.CExp as Exp
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
@@ -61,10 +63,9 @@ wrapESDK program = do
 -- TODO: allocate only the arrays that are really used?
 compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) Allocator a -> Allocator a
 compAllocHostCMD cmd@(Alloc coreId size) = do
-    let byteSize = size * 8 -- FIXME: calculate byte size from element type
-    -- can we use sizeof() in C + addition of previous addresses? (shortly: no.)
-    (addr, name) <- state (allocate coreId byteSize)
     (ty, incl) <- lift $ getResultType cmd
+    let byteSize = size * sizeOf ty
+    (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
@@ -119,7 +120,7 @@ compHostCMD (OnCore coreId comp) = do
         , groupAddr
         , valArg $ value r
         , valArg $ value c
-        , valArg (value 1 :: Data Int32) --  E_TRUE
+        , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
 
 
@@ -258,3 +259,24 @@ toGlobal addr coreId =
 
 bank2Base :: LocalAddress
 bank2Base = 0x2000
+
+
+sizeOf :: C.Type -> Size
+sizeOf (isCTypeOf (Proxy :: Proxy Bool)   -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Int8)   -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Int16)  -> True) = 2
+sizeOf (isCTypeOf (Proxy :: Proxy Int32)  -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Int64)  -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy Word8)  -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Word16) -> True) = 2
+sizeOf (isCTypeOf (Proxy :: Proxy Word32) -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Word64) -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy Float)  -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Double) -> True) = 8
+sizeOf cty = error $ "size of C type is unknown: " ++ show cty
+
+isCTypeOf :: Exp.CType a => proxy a -> C.Type -> Bool
+isCTypeOf ty cty = cty Prelude.== cTypeOf ty
+
+cTypeOf :: Exp.CType a => proxy a -> C.Type
+cTypeOf = fst . flip C.runCGen (C.defaultCEnv C.Flags) . Exp.cType
