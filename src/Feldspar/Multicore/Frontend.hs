@@ -26,11 +26,11 @@ setLArr i a = setArr i a . unLocalArr
 
 fetch :: (KnownNat coreId, SmallType a)
       => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-fetch dst range = Host . singleInj . Fetch dst range
+fetch spm range = Host . singleInj . Fetch spm range
 
 flush :: (KnownNat coreId, SmallType a)
       => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-flush src range = Host . singleInj . Flush src range
+flush spm range = Host . singleInj . Flush spm range
 
 onCore :: KnownNat coreId => CoreComp coreId () -> Host ()
 onCore = Host . singleInj . OnCore

@@ -40,7 +40,7 @@ library
     ScopedTypeVariables
     TypeFamilies
     TypeOperators
---    ViewPatterns
+    ViewPatterns
 
   build-depends:
     array,
