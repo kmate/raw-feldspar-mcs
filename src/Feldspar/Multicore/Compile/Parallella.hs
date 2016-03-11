@@ -95,9 +95,7 @@ compHostCMD (OnCore coreId comp) = do
 compCopy :: SmallType a => String -> Arr a-> Arr a -> IndexRange -> RunGen ()
 compCopy op spm ram (lower, upper) = do
     groupAddr <- gets group
-    let spmName = arrayRefName spm
-        ramName = arrayRefName ram
-    (r, c) <- gets $ groupCoordsForName spmName
+    (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
     lift $ addInclude "<e-feldspar.h>"
     lift $ callProc op
         [ groupAddr
@@ -223,8 +221,9 @@ allocate coreId size s@RGState{..} = ((startAddr, newName), s
     (startAddr, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . addAddr) coreId addrMap
-    addAddr (Just addrs@((_, next, _):_)) = (next, next + size, newName) : addrs
-    addAddr _ = [(bank2Base, bank2Base + size, newName)]
+    addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
+    addAddr _ = [(bank2Base, bank2Base + size', newName)]
+    size' = wordAlign size
 
 hasType :: Name -> C.Type -> RGState -> RGState
 hasType name ty s = s { typeMap = Map.insert name ty (typeMap s) }
@@ -265,6 +264,12 @@ toGlobal addr coreId =
     let (sr, sc) = systemCoord coreId
     -- 6 bit row number, 6 bit column number, 20 bit local address
     in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
+
+wordAlign :: LocalAddress -> LocalAddress
+wordAlign addr
+    | m == 0 = addr
+    | otherwise = addr - m + 4
+    where m = addr `mod` 4
 
 bank2Base :: LocalAddress
 bank2Base = 0x2000
