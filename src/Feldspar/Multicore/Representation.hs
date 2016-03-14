@@ -46,20 +46,22 @@ instance KnownNat coreId => MonadComp (CoreComp coreId)
 -- Host layer
 --------------------------------------------------------------------------------
 
-data HostCMD (prog :: * -> *) a
+data MulticoreCMD (prog :: * -> *) a
   where
     Fetch  :: (KnownNat coreId, SmallType a)
-           => LocalArr coreId a -> IndexRange -> Arr a -> HostCMD prog ()
+           => LocalArr coreId a -> IndexRange -> Arr a -> MulticoreCMD prog ()
     Flush  :: (KnownNat coreId, SmallType a)
-           => LocalArr coreId a -> IndexRange -> Arr a -> HostCMD prog ()
-    OnCore :: KnownNat coreId => CoreComp coreId () -> HostCMD prog ()
+           => LocalArr coreId a -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    OnCore :: KnownNat coreId => CoreComp coreId () -> MulticoreCMD prog ()
 
-instance HFunctor HostCMD
+instance HFunctor MulticoreCMD
   where
     hfmap _ (Fetch spm range ram) = Fetch spm range ram
     hfmap _ (Flush spm range ram) = Flush spm range ram
     hfmap _ (OnCore comp)         = OnCore comp
 
+
+type HostCMD = MulticoreCMD :+: Imp.ControlCMD Data
 
 newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
@@ -72,9 +74,9 @@ runHost = interpretT id . unHost
 
 instance MonadComp Host where
     liftComp        = lift . liftComp
-    iff cond t f    = lift $ iff cond (runHost t) (runHost f)
-    for range body  = lift $ for range (runHost . body)
-    while cont body = lift $ while (runHost cont) (runHost body)
+    iff cond t f    = Host $ Imp.iff cond (unHost t) (unHost f)
+    for range body  = Host $ Imp.for range (unHost . body)
+    while cont body = Host $ Imp.while (unHost cont) (unHost body)
 
 
 type instance IExp HostCMD         = Data
@@ -85,18 +87,26 @@ instance (a ~ ()) => PrintfType (Host a)
     fprf h form = lift . Run . singleE . Imp.FPrintf h form . reverse
 
 
-runHostCMD :: HostCMD Run a -> Run a
-runHostCMD (Fetch spm (lower, upper) ram) =
+runControlCMD :: (Imp.ControlCMD Data) Run a -> Run a
+runControlCMD (Imp.If cond t f)     = iff cond t f
+runControlCMD (Imp.For range body)  = for range body
+runControlCMD (Imp.While cond body) = while cond body
+
+instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
+
+
+runMulticoreCMD :: MulticoreCMD Run a -> Run a
+runMulticoreCMD (Fetch spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr i ram
         setArr (i - lower) item (unLocalArr spm)
-runHostCMD (Flush spm (lower, upper) ram) =
+runMulticoreCMD (Flush spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr (i - lower) (unLocalArr spm)
         setArr i item ram
-runHostCMD (OnCore comp) = void $ fork $ liftRun $ unCoreComp comp
+runMulticoreCMD (OnCore comp) = void $ fork $ liftRun $ unCoreComp comp
 
-instance Interp HostCMD Run where interp = runHostCMD
+instance Interp MulticoreCMD Run where interp = runMulticoreCMD
 
 
 --------------------------------------------------------------------------------

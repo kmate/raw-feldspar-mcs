@@ -74,19 +74,35 @@ compAllocHostCMD cmd@(Alloc size) = do
     return $ mkArrayRef name
 compAllocHostCMD (OnHost host) = do
     s <- get
-    lift $ runGen s
-         $ interpretWithMonadT compHostCMD lift
-         $ unHost host
+    lift $ runGen s $ interpretT lift $ unHost host
 
 getAllocHostCoreId :: forall (coreId :: Nat) exp prog a . KnownNat coreId
                    => AllocHostCMD exp prog (LocalArr coreId a) -> CoreId
 getAllocHostCoreId _ = fromIntegral $ natVal (Proxy :: Proxy coreId)
 
 
-compHostCMD :: HostCMD RunGen a -> RunGen a
-compHostCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
-compHostCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
-compHostCMD (OnCore comp) = do
+compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
+compControlCMD (Imp.If cond t f)     = do
+    s <- get
+    let t' = runGen s t
+        f' = runGen s f
+    lift $ iff cond t' f'
+compControlCMD (Imp.For range body)  = do
+    s <- get
+    let body' = runGen s . body
+    lift$ for range body'
+compControlCMD (Imp.While cond body) = do
+    s <- get
+    let cond' = runGen s cond
+        body' = runGen s body
+    lift $ while cond' body'
+
+instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
+
+compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
+compMulticoreCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
+compMulticoreCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
+compMulticoreCMD (OnCore comp) = do
     let coreId = getCoreCompCoreId comp
     compCore coreId (unCoreComp comp)
     groupAddr <- gets group
@@ -100,12 +116,13 @@ compHostCMD (OnCore comp) = do
         , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
 
+instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
+
+
 compCopy :: SmallType a => String -> LocalArr coreId a-> Arr a -> IndexRange -> RunGen ()
 compCopy op spm ram (lower, upper) = do
     groupAddr <- gets group
-    let spmName = arrayRefName (unLocalArr spm)
-        ramName = arrayRefName ram
-    (r, c) <- gets $ groupCoordsForName spmName
+    (r, c) <- gets $ groupCoordsForName (arrayRefName (unLocalArr spm))
     lift $ addInclude "<e-feldspar.h>"
     lift $ callProc op
         [ groupAddr
@@ -235,8 +252,9 @@ allocate coreId size s@RGState{..} = ((startAddr, newName), s
     (startAddr, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . addAddr) coreId addrMap
-    addAddr (Just addrs@((_, next, _):_)) = (next, next + size, newName) : addrs
-    addAddr _ = [(bank2Base, bank2Base + size, newName)]
+    addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
+    addAddr _ = [(bank2Base, bank2Base + size', newName)]
+    size' = wordAlign size
 
 hasType :: Name -> C.Type -> RGState -> RGState
 hasType name ty s = s { typeMap = Map.insert name ty (typeMap s) }
@@ -277,6 +295,12 @@ toGlobal addr coreId =
     let (sr, sc) = systemCoord coreId
     -- 6 bit row number, 6 bit column number, 20 bit local address
     in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
+
+wordAlign :: LocalAddress -> LocalAddress
+wordAlign addr
+    | m == 0 = addr
+    | otherwise = addr - m + 4
+    where m = addr `mod` 4
 
 bank2Base :: LocalAddress
 bank2Base = 0x2000
