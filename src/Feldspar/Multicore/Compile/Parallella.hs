@@ -71,15 +71,32 @@ compAllocHostCMD cmd@(Alloc coreId size) = do
     return $ mkArrayRef name
 compAllocHostCMD (OnHost host) = do
     s <- get
-    lift $ runGen s
-         $ interpretWithMonadT compHostCMD lift
-         $ unHost host
+    lift $ runGen s $ interpretT lift $ unHost host
 
 
-compHostCMD :: HostCMD RunGen a -> RunGen a
-compHostCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
-compHostCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
-compHostCMD (OnCore coreId comp) = do
+compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
+compControlCMD (Imp.If cond t f)     = do
+    s <- get
+    let t' = runGen s t
+        f' = runGen s f
+    lift $ iff cond t' f'
+compControlCMD (Imp.For range body)  = do
+    s <- get
+    let body' = runGen s . body
+    lift$ for range body'
+compControlCMD (Imp.While cond body) = do
+    s <- get
+    let cond' = runGen s cond
+        body' = runGen s body
+    lift $ while cond' body'
+
+instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
+
+
+compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
+compMulticoreCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
+compMulticoreCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
+compMulticoreCMD (OnCore coreId comp) = do
     compCore coreId comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
@@ -91,6 +108,9 @@ compHostCMD (OnCore coreId comp) = do
         , valArg $ value c
         , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
+
+instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
+
 
 compCopy :: SmallType a => String -> Arr a-> Arr a -> IndexRange -> RunGen ()
 compCopy op spm ram (lower, upper) = do
