@@ -89,27 +89,27 @@ instance Interp MulticoreCMD Run where interp = runMulticoreCMD
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-data AllocHostCMD exp (prog :: * -> *) a
+data AllocCMD exp (prog :: * -> *) a
   where
-    Alloc  :: (Exp.VarPred exp a, SmallType a) => CoreId -> Size -> AllocHostCMD exp prog (Arr a)
-    OnHost :: Host a -> AllocHostCMD exp prog a
+    Alloc  :: (Exp.VarPred exp a, SmallType a) => CoreId -> Size -> AllocCMD exp prog (Arr a)
+    OnHost :: Host a -> AllocCMD exp prog a
 
-instance HFunctor (AllocHostCMD exp)
+instance HFunctor (AllocCMD exp)
   where
     hfmap _ (Alloc coreId size) = Alloc coreId size
     hfmap _ (OnHost host)       = OnHost host
 
-type instance IExp (AllocHostCMD e)       = e
-type instance IExp (AllocHostCMD e :+: i) = e
+type instance IExp (AllocCMD e)       = e
+type instance IExp (AllocCMD e :+: i) = e
 
-newtype AllocHost a = AllocHost { unAllocHost :: Program (AllocHostCMD Exp.CExp) a }
+newtype Multicore a = Multicore { unMulticore :: Program (AllocCMD Exp.CExp) a }
   deriving (Functor, Applicative, Monad)
 
 
-runAllocHostCMD :: (AllocHostCMD exp) Run a -> Run a
-runAllocHostCMD (Alloc coreId size) = newArr (value size)
-runAllocHostCMD (OnHost host)       = runHost host
+runAllocCMD :: (AllocCMD exp) Run a -> Run a
+runAllocCMD (Alloc coreId size) = newArr (value size)
+runAllocCMD (OnHost host)       = runHost host
 
-instance Interp (AllocHostCMD exp) Run where interp = runAllocHostCMD
+instance Interp (AllocCMD exp) Run where interp = runAllocCMD
 
-instance MonadRun AllocHost where liftRun = interpret . unAllocHost
+instance MonadRun Multicore where liftRun = interpret . unMulticore

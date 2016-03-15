@@ -29,12 +29,12 @@ import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-onParallella :: (Run a -> b) -> AllocHost a -> b
+onParallella :: (Run a -> b) -> Multicore a -> b
 onParallella action
     = action
     . wrapESDK
-    . interpretWithMonad compAllocHostCMD
-    . unAllocHost
+    . interpretWithMonad compAllocCMD
+    . unMulticore
 
 --------------------------------------------------------------------------------
 -- Transformation over Run
@@ -60,8 +60,8 @@ wrapESDK program = do
 
 
 -- TODO: allocate only the arrays that are really used?
-compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) RunGen a -> RunGen a
-compAllocHostCMD cmd@(Alloc coreId size) = do
+compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
+compAllocCMD cmd@(Alloc coreId size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
@@ -69,7 +69,7 @@ compAllocHostCMD cmd@(Alloc coreId size) = do
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return $ mkArrayRef name
-compAllocHostCMD (OnHost host) = do
+compAllocCMD (OnHost host) = do
     s <- get
     lift $ runGen s $ interpretT lift $ unHost host
 
@@ -183,7 +183,7 @@ cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
 getResultType :: (VarPred exp a, CompExp exp)
-              => (AllocHostCMD exp) RunGen (proxy a)
+              => (AllocCMD exp) RunGen (proxy a)
               -> (C.Type, Set.Set String)
 getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)

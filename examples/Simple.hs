@@ -3,7 +3,7 @@ module Simple where
 import Feldspar.Multicore
 
 
-simple :: AllocHost ()
+simple :: Multicore ()
 simple = do
     d0 <- alloc 0 10
     d1 <- alloc 1 10

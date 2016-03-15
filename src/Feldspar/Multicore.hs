@@ -9,4 +9,4 @@ import Feldspar.Run as F
 
 import Feldspar.Multicore.Compile.Parallella as F
 import Feldspar.Multicore.Frontend as F
-import Feldspar.Multicore.Representation as F (AllocHost, Host)
+import Feldspar.Multicore.Representation as F (Multicore, Host)
