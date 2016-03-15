@@ -54,43 +54,36 @@ initBuff (Buffer rptr wptr nels _ _) = do
 fetchBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
 fetchBuff (Buffer rptr wptr nels elems size) (lower, upper) src = do
     let total = upper - lower + 1
-    while ((<0) <$> flushSpmRef nels) $ return ()
-    fetch elems (lower, upper) src
-    fetchSpmRef nels total
-{-
-    let total = upper - lower + 1
     written <- initRef (value 0 :: Data Length)
+    -- until all data is written
     while ((<total) <$> getRef written) $ do
         -- wait for empty space in the buffer
         while ((==size) <$> flushSpmRef nels) $ return ()
         -- calculate items left
         done <- getRef written
         let left = total - done
-        -- how many items could it write in this round
+        -- how many items could be writen in this round
         count <- flushSpmRef nels
-        let toWrite = min left (left - (size - count))
-        let start = lower + done
+        let empty = size - count
+            toWrite = min left empty
+            start = lower + done
         wx <- flushSpmRef wptr
         iff (wx + toWrite <= size)
             (fetchTo wx elems (start, start + toWrite - 1) src)
             (do let toEnd = size - wx
                 fetchTo wx elems (start, start + toEnd - 1) src
                 let start' = start + toEnd
-                fetchTo 0 elems (start', start' + toWrite - (size - wx) - 1) src)
+                fetchTo 0 elems (start', start' + (toWrite - toEnd) - 1) src)
         fetchSpmRef wptr ((wx + toWrite) `rem` size)
+        setRef written (done + toWrite)
 -- should be mutexed together with the getter of count above
         fetchSpmRef nels (count + toWrite)
--}
 
 flushBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
 flushBuff (Buffer rptr wptr nels elems size) (lower, upper) dst = do
     let total = upper - lower + 1
-    while ((==total) <$> flushSpmRef nels) $ return ()
-    flush elems (lower, upper) dst
-    fetchSpmRef nels 0
-{-
-    let total = upper - lower + 1
     read <- initRef (value 0 :: Data Length)
+    -- until all data is read
     while ((<total) <$> getRef read) $ do
         -- wait for items in the buffer
         while ((<=0) <$> flushSpmRef nels) $ return ()
@@ -98,20 +91,20 @@ flushBuff (Buffer rptr wptr nels elems size) (lower, upper) dst = do
         done <- getRef read
         let left = total - done
         -- how many items could it read in this round
-        count <- flushSpmRef nels
-        let toRead = min left (left - (size - count))
-        let start = lower + done
+        available <- flushSpmRef nels
+        let toRead = min left available
+            start = lower + done
         rx <- flushSpmRef rptr
         iff (rx + toRead <= size)
-            (flushFrom rx elems (start, start + toRead - 1) src)
+            (flushFrom rx elems (start, start + toRead - 1) dst)
             (do let toEnd = size - rx
-                flushFrom rx elems (start, start + toEnd - 1) src
+                flushFrom rx elems (start, start + toEnd - 1) dst
                 let start' = start + toEnd
-                fetchTo 0 elems (start', start' + toRead - (size - rx) - 1) src)
+                fetchTo 0 elems (start', start' + toRead - (size - rx) - 1) dst)
         fetchSpmRef rptr ((rx + toRead) `rem` size)
+        setRef read (done + toRead)
 -- should be mutexed together with the getter of count above
-        fetchSpmRef nels (count - toRead)
--}
+        fetchSpmRef nels (available - toRead)
 
 writeBuff :: SmallType a => Data a -> Buffer a -> Comp ()
 writeBuff elem (Buffer rptr wptr nels elems size) = do
@@ -178,8 +171,9 @@ g input output = while (return $ true) $ do
 ------------------------------------------------------------
 
 testAll = do
-    icompileAll `onParallella` (ringBuffers 4 4)
-    let modules = compileAll `onParallella` (ringBuffers 4 4)
+    let test = ringBuffers 2 2
+    icompileAll `onParallella` test
+    let modules = compileAll `onParallella` test
     forM_ modules $ \(name, contents) -> do
         let name' = if name Prelude.== "main" then "host" else name
         writeFile (name' Prelude.++ ".c") contents
