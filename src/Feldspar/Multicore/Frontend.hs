@@ -11,10 +11,16 @@ import Feldspar.Multicore.Representation
 --------------------------------------------------------------------------------
 
 fetch :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-fetch spm range = Host . singleInj . Fetch spm range
+fetch = fetchTo 0
 
 flush :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-flush spm range = Host . singleInj . Flush spm range
+flush = flushFrom 0
+
+fetchTo :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
+fetchTo offset spm range = Host . singleInj . Fetch spm offset range
+
+flushFrom :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
+flushFrom offset spm range = Host . singleInj . Flush spm offset range
 
 onCore :: CoreId -> Comp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId

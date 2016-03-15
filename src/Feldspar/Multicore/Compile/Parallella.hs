@@ -94,8 +94,8 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
-compMulticoreCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
+compMulticoreCMD (Fetch spm offset range ram) = compCopy "e_fetch" spm ram offset range
+compMulticoreCMD (Flush spm offset range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
     compCore coreId comp
     groupAddr <- gets group
@@ -112,8 +112,8 @@ compMulticoreCMD (OnCore coreId comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String -> Arr a-> Arr a -> IndexRange -> RunGen ()
-compCopy op spm ram (lower, upper) = do
+compCopy :: SmallType a => String -> Arr a-> Arr a -> Data Index -> IndexRange -> RunGen ()
+compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
     lift $ addInclude "<e-feldspar.h>"
@@ -123,6 +123,7 @@ compCopy op spm ram (lower, upper) = do
         , valArg $ value c
         , arrArg spm
         , arrArg ram
+        , valArg offset
         , valArg lower
         , valArg upper
         ]

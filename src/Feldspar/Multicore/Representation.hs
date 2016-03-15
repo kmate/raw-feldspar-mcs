@@ -26,15 +26,15 @@ type IndexRange = (Data Index, Data Index)
 
 data MulticoreCMD (prog :: * -> *) a
   where
-    Fetch  :: SmallType a => Arr a -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    Flush  :: SmallType a => Arr a -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    Fetch  :: SmallType a => Arr a -> Data Index -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    Flush  :: SmallType a => Arr a -> Data Index -> IndexRange -> Arr a -> MulticoreCMD prog ()
     OnCore :: CoreId -> Comp () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
-    hfmap _ (Fetch spm range ram) = Fetch spm range ram
-    hfmap _ (Flush spm range ram) = Flush spm range ram
-    hfmap _ (OnCore coreId comp)  = OnCore coreId comp
+    hfmap _ (Fetch spm offset range ram) = Fetch spm offset range ram
+    hfmap _ (Flush spm offset range ram) = Flush spm offset range ram
+    hfmap _ (OnCore coreId comp)         = OnCore coreId comp
 
 
 type HostCMD = MulticoreCMD :+: Imp.ControlCMD Data
@@ -72,13 +72,13 @@ instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
 
 
 runMulticoreCMD :: MulticoreCMD Run a -> Run a
-runMulticoreCMD (Fetch spm (lower, upper) ram) =
+runMulticoreCMD (Fetch spm offset (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr i ram
-        setArr (i - lower) item spm
-runMulticoreCMD (Flush spm (lower, upper) ram) =
+        setArr (i - lower + offset) item spm
+runMulticoreCMD (Flush spm offset (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower) spm
+        item :: Data a <- getArr (i - lower + offset) spm
         setArr i item ram
 runMulticoreCMD (OnCore coreId comp) = void $ fork $liftRun comp
 
