@@ -137,14 +137,11 @@ readBuff (Buffer rptr wptr nels elems size) = do
     return elem
 
 
-n :: Word32
-n = 4
-
-ringBuffers :: Multicore ()
-ringBuffers = do
-    b0 <- allocBuff 0 4
-    b1 <- allocBuff 1 4
-    b2 <- allocBuff 2 4
+ringBuffers :: Size -> Size -> Multicore ()
+ringBuffers ioChunkSize bufferSize = do
+    b0 <- allocBuff 0 bufferSize
+    b1 <- allocBuff 1 bufferSize
+    b2 <- allocBuff 2 bufferSize
     onHost $ do
         initBuff b0
         initBuff b1
@@ -153,16 +150,16 @@ ringBuffers = do
         onCore 1 (g b1 b2)
 
         while (return $ true) $ do
-            input :: Arr Int32 <- newArr $ value n
-            for (0, 1, Excl $ value n) $ \i -> do
+            input :: Arr Int32 <- newArr $ value ioChunkSize
+            for (0, 1, Excl $ value ioChunkSize) $ \i -> do
                 item :: Data Int32 <- lift $ fget stdin
                 setArr i item input
 
-            fetchBuff b0 (0, value $ n - 1) input
-            output <- newArr $ value n
-            flushBuff b2 (0, value $ n - 1) output
+            fetchBuff b0 (0, value $ ioChunkSize - 1) input
+            output <- newArr $ value ioChunkSize
+            flushBuff b2 (0, value $ ioChunkSize - 1) output
 
-            for (0, 1, Excl $ value n) $ \i -> do
+            for (0, 1, Excl $ value ioChunkSize) $ \i -> do
                 item :: Data Int32 <- getArr i output
                 lift $ printf "> %d\n" item
 
@@ -181,8 +178,8 @@ g input output = while (return $ true) $ do
 ------------------------------------------------------------
 
 testAll = do
-    icompileAll `onParallella` ringBuffers
-    let modules = compileAll `onParallella` ringBuffers
+    icompileAll `onParallella` (ringBuffers 4 4)
+    let modules = compileAll `onParallella` (ringBuffers 4 4)
     forM_ modules $ \(name, contents) -> do
         let name' = if name Prelude.== "main" then "host" else name
         writeFile (name' Prelude.++ ".c") contents
