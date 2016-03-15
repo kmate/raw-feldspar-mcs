@@ -5,10 +5,6 @@ import qualified Prelude
 import Feldspar.Multicore
 
 
-import Feldspar.Multicore.Representation
-import Control.Monad.Operational.Higher
-
-
 n :: Word32
 n = 4
 
