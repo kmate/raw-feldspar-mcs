@@ -30,12 +30,12 @@ import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-onParallella :: (Run a -> b) -> AllocHost a -> b
+onParallella :: (Run a -> b) -> Multicore a -> b
 onParallella action
     = action
     . wrapESDK
-    . interpretWithMonad compAllocHostCMD
-    . unAllocHost
+    . interpretWithMonad compAllocCMD
+    . unMulticore
 
 --------------------------------------------------------------------------------
 -- Transformation over Run
@@ -62,8 +62,8 @@ wrapESDK program = do
 
 
 -- TODO: allocate only the arrays that are really used?
-compAllocHostCMD :: CompExp exp => (AllocHostCMD exp) RunGen a -> RunGen a
-compAllocHostCMD cmd@(Alloc size) = do
+compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
+compAllocCMD cmd@(Alloc size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
         coreId     = getAllocHostCoreId cmd
@@ -72,7 +72,7 @@ compAllocHostCMD cmd@(Alloc size) = do
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return $ mkArrayRef name
-compAllocHostCMD (OnHost host) = do
+compAllocCMD (OnHost host) = do
     s <- get
     lift $ runGen s $ interpretT lift $ unHost host
 
@@ -100,8 +100,8 @@ compControlCMD (Imp.While cond body) = do
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (Fetch spm range ram) = compCopy "e_fetch" spm ram range
-compMulticoreCMD (Flush spm range ram) = compCopy "e_flush" spm ram range
+compMulticoreCMD (Fetch spm offset range ram) = compCopy "e_fetch" spm ram offset range
+compMulticoreCMD (Flush spm offset range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore comp) = do
     let coreId = getCoreCompCoreId comp
     compCore coreId (unCoreComp comp)
@@ -119,8 +119,8 @@ compMulticoreCMD (OnCore comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String -> LocalArr coreId a-> Arr a -> IndexRange -> RunGen ()
-compCopy op spm ram (lower, upper) = do
+compCopy :: SmallType a => String -> LocalArr coreId a-> Arr a -> Data Index -> IndexRange -> RunGen ()
+compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName (unLocalArr spm))
     lift $ addInclude "<e-feldspar.h>"
@@ -130,6 +130,7 @@ compCopy op spm ram (lower, upper) = do
         , valArg $ value c
         , arrArg (unLocalArr spm)
         , arrArg ram
+        , valArg offset
         , valArg lower
         , valArg upper
         ]
@@ -194,7 +195,7 @@ cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
 getResultType :: (VarPred exp a, CompExp exp)
-              => (AllocHostCMD exp) RunGen (proxy a)
+              => (AllocCMD exp) RunGen (proxy a)
               -> (C.Type, Set.Set String)
 getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)

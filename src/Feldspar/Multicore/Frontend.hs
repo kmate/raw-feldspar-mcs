@@ -26,11 +26,19 @@ setLArr i a = setArr i a . unLocalArr
 
 fetch :: (KnownNat coreId, SmallType a)
       => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-fetch spm range = Host . singleInj . Fetch spm range
+fetch = fetchTo 0
 
 flush :: (KnownNat coreId, SmallType a)
       => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-flush spm range = Host . singleInj . Flush spm range
+flush = flushFrom 0
+
+fetchTo  :: (KnownNat coreId, SmallType a)
+         => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+fetchTo offset spm range = Host . singleInj . Fetch spm offset range
+
+flushFrom flush :: (KnownNat coreId, SmallType a)
+                => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+flushFrom offset spm range = Host . singleInj . Flush spm offset range
 
 onCore :: KnownNat coreId => CoreComp coreId () -> Host ()
 onCore = Host . singleInj . OnCore
@@ -41,8 +49,8 @@ onCore = Host . singleInj . OnCore
 --------------------------------------------------------------------------------
 
 alloc :: (KnownNat coreId, SmallType a)
-      => Size -> AllocHost (LocalArr coreId a)
-alloc = AllocHost . singleE . Alloc
+      => Size -> Multicore (LocalArr coreId a)
+alloc = Multicore . singleE . Alloc
 
-onHost :: Host a -> AllocHost a
-onHost = AllocHost . singleE . OnHost
+onHost :: Host a -> Multicore a
+onHost = Multicore . singleE . OnHost

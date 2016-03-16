@@ -5,7 +5,7 @@ import Feldspar.Multicore
 import GHC.TypeLits
 
 
-simple :: AllocHost ()
+simple :: Multicore ()
 simple = do
     d0 <- alloc 10
     d1 <- alloc 10
