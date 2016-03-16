@@ -7,15 +7,15 @@ import Feldspar.Multicore
 
 ringBuffers :: Size -> Size -> Multicore ()
 ringBuffers ioChunkSize bufferSize = do
-    b0 <- allocBuff 0 bufferSize
-    b1 :: Buffer Int32 <- allocBuff 1 bufferSize
-    b2 <- allocBuff 2 bufferSize
+    p0 <- allocPipe 0 bufferSize
+    p1 <- allocPipe 1 bufferSize
+    p2 <- allocPipe 2 bufferSize
     onHost $ do
-        initBuff b0
-        initBuff b1
-        initBuff b2
-        onCore 0 (f b0 b1)
-        onCore 1 (g b1 b2)
+        initPipe p0
+        initPipe p1
+        initPipe p2
+        onCore 0 (f p0 p1)
+        onCore 1 (g p1 p2)
 
         while (return $ true) $ do
             input :: Arr Int32 <- newArr $ value ioChunkSize
@@ -23,24 +23,24 @@ ringBuffers ioChunkSize bufferSize = do
                 item :: Data Int32 <- lift $ fget stdin
                 setArr i item input
 
-            fetchBuff b0 (0, value $ ioChunkSize - 1) input
+            pushPipe p0 (0, value $ ioChunkSize - 1) input
             output <- newArr $ value ioChunkSize
-            flushBuff b2 (0, value $ ioChunkSize - 1) output
+            pullPipe p2 (0, value $ ioChunkSize - 1) output
 
             for (0, 1, Excl $ value ioChunkSize) $ \i -> do
                 item :: Data Int32 <- getArr i output
                 lift $ printf "> %d\n" item
 
 
-f :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
+f :: Pipe Int32 -> Pipe Int32 -> CoreComp ()
 f input output = forever $ do
-    elem <- readBuff input
-    writeBuff (elem + 1) output
+    elem <- readPipe input
+    writePipe (elem + 1) output
 
-g :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
+g :: Pipe Int32 -> Pipe Int32 -> CoreComp ()
 g input output = forever $ do
-    elem <- readBuff input
-    writeBuff (elem * 2) output
+    elem <- readPipe input
+    writePipe (elem * 2) output
 
 
 ------------------------------------------------------------

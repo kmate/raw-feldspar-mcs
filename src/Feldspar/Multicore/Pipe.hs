@@ -8,27 +8,27 @@ import Feldspar.Multicore.Reference
 import Feldspar.Multicore.Representation
 
 
-data Buffer a = Buffer
+data Pipe a = Pipe
     { readPtr  :: LocalRef Index
     , writePtr :: LocalRef Index
     , elements :: LocalArr a
     , maxElems :: Data Length
     }
 
-allocBuff :: SmallType a => CoreId -> Size -> Multicore (Buffer a)
-allocBuff coreId size = do
+allocPipe :: SmallType a => CoreId -> Size -> Multicore (Pipe a)
+allocPipe coreId size = do
     rptr  <- allocRef coreId
     wptr  <- allocRef coreId
     elems <- allocArr coreId (size + 1)
-    return $ Buffer rptr wptr elems (value size + 1)
+    return $ Pipe rptr wptr elems (value size + 1)
 
-initBuff :: SmallType a => Buffer a -> Host ()
-initBuff (Buffer rptr wptr _ _) = do
+initPipe :: SmallType a => Pipe a -> Host ()
+initPipe (Pipe rptr wptr _ _) = do
     writeRef rptr 0
     writeRef wptr 0
 
-fetchBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
-fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
+pushPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
+pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
     let total = upper - lower + 1
     written <- initRef (value 0 :: Data Length)
     -- until all data is written
@@ -57,8 +57,8 @@ fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
         writeRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
-flushBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
-flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
+pullPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
+pullPipe (Pipe rptr wptr elems size) (lower, upper) dst = do
     let total = upper - lower + 1
     read <- initRef (value 0 :: Data Length)
     -- until all data is read
@@ -86,8 +86,8 @@ flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
         writeRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 
-writeBuff :: SmallType a => Data a -> Buffer a -> CoreComp ()
-writeBuff elem (Buffer rptr wptr elems size) = do
+writePipe :: SmallType a => Data a -> Pipe a -> CoreComp ()
+writePipe elem (Pipe rptr wptr elems size) = do
     while (do
         rx <- getLocalRef rptr
         wx <- getLocalRef wptr
@@ -96,8 +96,8 @@ writeBuff elem (Buffer rptr wptr elems size) = do
     setArr wx elem -< elems
     setLocalRef ((wx + 1) `rem` size) wptr
 
-readBuff :: SmallType a => Buffer a -> CoreComp (Data a)
-readBuff (Buffer rptr wptr elems size) = do
+readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
+readPipe (Pipe rptr wptr elems size) = do
     while (do
         rx <- getLocalRef rptr
         wx <- getLocalRef wptr
