@@ -61,7 +61,7 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(Alloc coreId size) = do
+compAllocCMD cmd@(AllocArr coreId size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
@@ -94,8 +94,8 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (Fetch spm offset range ram) = compCopy "e_fetch" spm ram offset range
-compMulticoreCMD (Flush spm offset range ram) = compCopy "e_flush" spm ram offset range
+compMulticoreCMD (WriteArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
+compMulticoreCMD (ReadArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
     compCore coreId comp
     groupAddr <- gets group

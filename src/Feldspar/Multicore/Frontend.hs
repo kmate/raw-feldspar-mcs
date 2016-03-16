@@ -10,17 +10,17 @@ import Feldspar.Multicore.Representation
 -- Host layer
 --------------------------------------------------------------------------------
 
-fetch :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-fetch = fetchTo 0
+writeArr :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
+writeArr = writeArrAt 0
 
-flush :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-flush = flushFrom 0
+readArr :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
+readArr = readArrAt 0
 
-fetchTo :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
-fetchTo offset spm range = Host . singleInj . Fetch spm offset range
+writeArrAt :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
+writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
 
-flushFrom :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
-flushFrom offset spm range = Host . singleInj . Flush spm offset range
+readArrAt :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
+readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
 onCore :: CoreId -> Comp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
@@ -30,8 +30,8 @@ onCore coreId = Host . singleInj . OnCore coreId
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-alloc :: SmallType a => CoreId -> Size -> Multicore (Arr a)
-alloc coreId = Multicore . singleE . Alloc coreId
+allocArr :: SmallType a => CoreId -> Size -> Multicore (Arr a)
+allocArr coreId = Multicore . singleE . AllocArr coreId
 
 onHost :: Host a -> Multicore a
 onHost = Multicore . singleE . OnHost

@@ -8,18 +8,18 @@ import Feldspar.Multicore
 newtype SpmRef a = SpmRef { unSpmRef :: Arr a }
 
 allocSpmRef :: SmallType a => CoreId -> Multicore (SpmRef a)
-allocSpmRef coreId = SpmRef <$> alloc coreId 1
+allocSpmRef coreId = SpmRef <$> allocArr coreId 1
 
 fetchSpmRef :: SmallType a => SpmRef a -> Data a -> Host ()
 fetchSpmRef spmRef value = do
     tmp <- newArr 1
     setArr 0 value tmp
-    fetch (unSpmRef spmRef) (0,0) tmp
+    writeArr (unSpmRef spmRef) (0,0) tmp
 
 flushSpmRef :: SmallType a => SpmRef a -> Host (Data a)
 flushSpmRef spmRef = do
     tmp <- newArr 1
-    flush (unSpmRef spmRef) (0,0) tmp
+    readArr (unSpmRef spmRef) (0,0) tmp
     getArr 0 tmp
 
 getSpmRef :: SmallType a => SpmRef a -> Comp (Data a)
@@ -40,7 +40,7 @@ allocBuff :: SmallType a => CoreId -> Size -> Multicore (Buffer a)
 allocBuff coreId size = do
     rptr  <- allocSpmRef coreId
     wptr  <- allocSpmRef coreId
-    elems <- alloc coreId (size + 1)
+    elems <- allocArr coreId (size + 1)
     return $ Buffer rptr wptr elems (value size + 1)
 
 initBuff :: SmallType a => Buffer a -> Host ()
@@ -70,11 +70,11 @@ fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
             toWrite = min left empty
             start = lower + done
         iff (wx + toWrite <= size)
-            (fetchTo wx elems (start, start + toWrite - 1) src)
+            (writeArrAt wx elems (start, start + toWrite - 1) src)
             (do let toEnd = size - wx
-                fetchTo wx elems (start, start + toEnd - 1) src
+                writeArrAt wx elems (start, start + toEnd - 1) src
                 let start' = start + toEnd
-                fetchTo 0 elems (start', start' + (toWrite - toEnd) - 1) src)
+                writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
         fetchSpmRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
@@ -99,11 +99,11 @@ flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
         let toRead = min left available
             start = lower + done
         iff (rx + toRead <= size)
-            (flushFrom rx elems (start, start + toRead - 1) dst)
+            (readArrAt rx elems (start, start + toRead - 1) dst)
             (do let toEnd = size - rx
-                flushFrom rx elems (start, start + toEnd - 1) dst
+                readArrAt rx elems (start, start + toEnd - 1) dst
                 let start' = start + toEnd
-                flushFrom 0 elems (start', start' + toRead - (size - rx) - 1) dst)
+                readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
         fetchSpmRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 
