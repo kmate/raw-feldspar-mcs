@@ -19,6 +19,7 @@ extra-source-files:
 library
   exposed-modules:
     Feldspar.Multicore.Representation
+    Feldspar.Multicore.Reference
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
     Feldspar.Multicore
