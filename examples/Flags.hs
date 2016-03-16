@@ -26,7 +26,7 @@ flags = do
         while (return $ true) $ do
             input :: Arr Int32 <- newArr $ value n
             for (0, 1, Excl $ value n) $ \i -> do
-                item :: Data Int32 <- lift $ fget stdin
+                item <- lift $ fget stdin
                 setArr i item input
 
             writeArr b0 (0, value $ n - 1) input
@@ -38,7 +38,7 @@ flags = do
 
             for (0, 1, Excl $ value n) $ \i -> do
                 item :: Data Int32 <- getArr i output
-                lift $ printf "> %d\n" item
+                printf "> %d\n" item
 
 
 f :: (LocalRef Bool, LocalArr Int32) -> (LocalRef Bool, LocalArr Int32) -> CoreComp ()

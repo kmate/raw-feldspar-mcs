@@ -30,7 +30,7 @@ generalPipes ioChunkSize bufferSize = do
         while (return $ true) $ do
             input :: Arr Int32 <- newArr $ value ioChunkSize
             for (0, 1, Excl $ value ioChunkSize) $ \i -> do
-                item :: Data Int32 <- lift $ fget stdin
+                item <- lift $ fget stdin
                 setArr i item input
 
             pushPipe host_fork (0, value $ ioChunkSize - 1) input
@@ -39,7 +39,7 @@ generalPipes ioChunkSize bufferSize = do
 
             for (0, 1, Excl $ value ioChunkSize) $ \i -> do
                 item :: Data Int32 <- getArr i output
-                lift $ printf "> %d\n" item
+                printf "> %d\n" item
 
 
 fork :: SmallType a => Pipe a -> Pipe a -> Pipe a -> CoreComp ()

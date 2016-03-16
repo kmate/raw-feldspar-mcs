@@ -12,7 +12,7 @@ simple = do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \i -> do
             printf "Item %d> " i
-            item :: Data Int32 <- lift $ fget stdin
+            item <- lift $ fget stdin
             setArr i item input
 
         writeArr d0 (0,9) input
