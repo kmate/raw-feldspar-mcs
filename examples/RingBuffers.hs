@@ -100,7 +100,7 @@ flushBuff (Buffer rptr wptr nels elems size) (lower, upper) dst = do
             (do let toEnd = size - rx
                 flushFrom rx elems (start, start + toEnd - 1) dst
                 let start' = start + toEnd
-                fetchTo 0 elems (start', start' + toRead - (size - rx) - 1) dst)
+                flushFrom 0 elems (start', start' + toRead - (size - rx) - 1) dst)
         fetchSpmRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 -- should be mutexed together with the getter of count above
@@ -170,10 +170,15 @@ g input output = while (return $ true) $ do
 
 ------------------------------------------------------------
 
+test = ringBuffers 4 2
+
 testAll = do
-    let test = ringBuffers 2 2
     icompileAll `onParallella` test
     let modules = compileAll `onParallella` test
     forM_ modules $ \(name, contents) -> do
         let name' = if name Prelude.== "main" then "host" else name
         writeFile (name' Prelude.++ ".c") contents
+
+runTestCompiled = runCompiled' opts test
+  where
+    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
