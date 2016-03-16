@@ -11,34 +11,39 @@ import Feldspar.Multicore.Representation
 -- Core layer
 --------------------------------------------------------------------------------
 
-getLArr :: (KnownNat coreId, Syntax a)
-        => Data Index -> LocalArr coreId (Internal a) -> CoreComp coreId a
-getLArr i = getArr i . unLocalArr
+local :: LocalArr ca a -> CoreComp cb (Arr a)
+local = return . unLocalArr
 
-setLArr :: (KnownNat coreId, Syntax a, MonadComp m)
-        => Data Index -> a -> LocalArr coreId (Internal a) -> m ()
-setLArr i a = setArr i a . unLocalArr
+(-<) :: (Arr a -> CoreComp cb b) -> LocalArr ca a -> CoreComp cb b
+action -< arr = action =<< local arr
+
+infixr 1 -<
+
+forever :: KnownNat coreId => CoreComp coreId () -> CoreComp coreId ()
+forever = while (return $ true)
 
 
 --------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
-fetch :: (KnownNat coreId, SmallType a)
-      => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-fetch = fetchTo 0
+writeArr :: (KnownNat coreId, SmallType a)
+         => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+writeArr = writeArrAt 0
 
-flush :: (KnownNat coreId, SmallType a)
-      => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-flush = flushFrom 0
+readArr :: (KnownNat coreId, SmallType a)
+        => LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+readArr = readArrAt 0
 
-fetchTo  :: (KnownNat coreId, SmallType a)
-         => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-fetchTo offset spm range = Host . singleInj . Fetch spm offset range
+writeArrAt :: (KnownNat coreId, SmallType a)
+           => Data Index -> LocalArr coreId a
+           -> IndexRange -> Arr a -> Host ()
+writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
 
-flushFrom :: (KnownNat coreId, SmallType a)
-          => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
-flushFrom offset spm range = Host . singleInj . Flush spm offset range
+readArrAt :: (KnownNat coreId, SmallType a)
+          => Data Index -> LocalArr coreId a
+          -> IndexRange -> Arr a -> Host ()
+readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
 onCore :: KnownNat coreId => CoreComp coreId () -> Host ()
 onCore = Host . singleInj . OnCore
@@ -48,9 +53,9 @@ onCore = Host . singleInj . OnCore
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-alloc :: (KnownNat coreId, SmallType a)
+allocArr :: (KnownNat coreId, SmallType a)
       => Size -> Multicore (LocalArr coreId a)
-alloc = Multicore . singleE . Alloc
+allocArr = Multicore . singleE . AllocArr
 
 onHost :: Host a -> Multicore a
 onHost = Multicore . singleE . OnHost

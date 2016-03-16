@@ -63,7 +63,7 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(Alloc size) = do
+compAllocCMD cmd@(AllocArr size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
         coreId     = getAllocHostCoreId cmd
@@ -100,8 +100,8 @@ compControlCMD (Imp.While cond body) = do
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (Fetch spm offset range ram) = compCopy "e_fetch" spm ram offset range
-compMulticoreCMD (Flush spm offset range ram) = compCopy "e_flush" spm ram offset range
+compMulticoreCMD (WriteArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
+compMulticoreCMD (ReadArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore comp) = do
     let coreId = getCoreCompCoreId comp
     compCore coreId (unCoreComp comp)
@@ -119,10 +119,12 @@ compMulticoreCMD (OnCore comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String -> LocalArr coreId a-> Arr a -> Data Index -> IndexRange -> RunGen ()
+compCopy :: SmallType a => String
+         -> LocalArr coreId a-> Arr a
+         -> Data Index -> IndexRange -> RunGen ()
 compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
-    (r, c) <- gets $ groupCoordsForName (arrayRefName (unLocalArr spm))
+    (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
     lift $ addInclude "<e-feldspar.h>"
     lift $ callProc op
         [ groupAddr
@@ -204,8 +206,8 @@ getResultType cmd =
 mkArrayRef :: SmallType a => VarId -> LocalArr coreId a
 mkArrayRef name = LocalArr $ Arr $ Actual $ Imp.ArrComp name
 
-arrayRefName :: Arr a -> VarId
-arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
+arrayRefName :: LocalArr coreId a -> VarId
+arrayRefName (LocalArr (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
