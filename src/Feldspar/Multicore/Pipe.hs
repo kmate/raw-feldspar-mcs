@@ -15,6 +15,7 @@ data Pipe a = Pipe
     , maxElems :: Data Length
     }
 
+
 allocPipe :: SmallType a => CoreId -> Size -> Multicore (Pipe a)
 allocPipe coreId size = do
     rptr  <- allocRef coreId
@@ -26,6 +27,36 @@ initPipe :: SmallType a => Pipe a -> Host ()
 initPipe (Pipe rptr wptr _ _) = do
     writeRef rptr 0
     writeRef wptr 0
+
+
+pullPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
+pullPipe (Pipe rptr wptr elems size) (lower, upper) dst = do
+    let total = upper - lower + 1
+    read <- initRef (value 0 :: Data Length)
+    -- until all data is read
+    while ((<total) <$> getRef read) $ do
+        -- wait for items in the buffer
+        while (do
+            rx <- readRef rptr
+            wx <- readRef wptr
+            return $ rx == wx) $ return ()
+        -- calculate items left
+        done <- getRef read
+        let left = total - done
+        -- how many items could it read in this round
+        rx <- readRef rptr
+        wx <- readRef wptr
+        let available = (size + wx -rx) `rem` size
+        let toRead = min left available
+            start = lower + done
+        iff (rx + toRead <= size)
+            (readArrAt rx elems (start, start + toRead - 1) dst)
+            (do let toEnd = size - rx
+                readArrAt rx elems (start, start + toEnd - 1) dst
+                let start' = start + toEnd
+                readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
+        writeRef rptr ((rx + toRead) `rem` size)
+        setRef read (done + toRead)
 
 pushPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
 pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
@@ -57,44 +88,6 @@ pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
         writeRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
-pullPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
-pullPipe (Pipe rptr wptr elems size) (lower, upper) dst = do
-    let total = upper - lower + 1
-    read <- initRef (value 0 :: Data Length)
-    -- until all data is read
-    while ((<total) <$> getRef read) $ do
-        -- wait for items in the buffer
-        while (do
-            rx <- readRef rptr
-            wx <- readRef wptr
-            return $ rx == wx) $ return ()
-        -- calculate items left
-        done <- getRef read
-        let left = total - done
-        -- how many items could it read in this round
-        rx <- readRef rptr
-        wx <- readRef wptr
-        let available = (size + wx -rx) `rem` size
-        let toRead = min left available
-            start = lower + done
-        iff (rx + toRead <= size)
-            (readArrAt rx elems (start, start + toRead - 1) dst)
-            (do let toEnd = size - rx
-                readArrAt rx elems (start, start + toEnd - 1) dst
-                let start' = start + toEnd
-                readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
-        writeRef rptr ((rx + toRead) `rem` size)
-        setRef read (done + toRead)
-
-writePipe :: SmallType a => Data a -> Pipe a -> CoreComp ()
-writePipe elem (Pipe rptr wptr elems size) = do
-    while (do
-        rx <- getLocalRef rptr
-        wx <- getLocalRef wptr
-        return $ (wx + 1) `rem` size == rx) $ return ()
-    wx <- getLocalRef wptr
-    setArr wx elem -< elems
-    setLocalRef ((wx + 1) `rem` size) wptr
 
 readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
 readPipe (Pipe rptr wptr elems size) = do
@@ -104,5 +97,15 @@ readPipe (Pipe rptr wptr elems size) = do
         return $ rx == wx) $ return ()
     rx <- getLocalRef rptr
     elem <- getArr rx -< elems
-    setLocalRef ((rx + 1) `rem` size) rptr
+    setLocalRef rptr ((rx + 1) `rem` size)
     return elem
+
+writePipe :: SmallType a => Data a -> Pipe a -> CoreComp ()
+writePipe elem (Pipe rptr wptr elems size) = do
+    while (do
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptr
+        return $ (wx + 1) `rem` size == rx) $ return ()
+    wx <- getLocalRef wptr
+    setArr wx elem -< elems
+    setLocalRef wptr ((wx + 1) `rem` size)
