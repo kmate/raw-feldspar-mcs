@@ -32,7 +32,6 @@ setSpmRef value = setArr 0 value . unSpmRef
 data Buffer a = Buffer
     { readPtr  :: SpmRef Index
     , writePtr :: SpmRef Index
-    , numElems :: SpmRef Length
     , elements :: Arr a
     , maxElems :: Data Length
     }
@@ -41,33 +40,35 @@ allocBuff :: SmallType a => CoreId -> Size -> Multicore (Buffer a)
 allocBuff coreId size = do
     rptr  <- allocSpmRef coreId
     wptr  <- allocSpmRef coreId
-    nels  <- allocSpmRef coreId
-    elems <- alloc coreId size
-    return $ Buffer rptr wptr nels elems (value size)
+    elems <- alloc coreId (size + 1)
+    return $ Buffer rptr wptr elems (value size + 1)
 
 initBuff :: SmallType a => Buffer a -> Host ()
-initBuff (Buffer rptr wptr nels _ _) = do
+initBuff (Buffer rptr wptr _ _) = do
     fetchSpmRef rptr 0
     fetchSpmRef wptr 0
-    fetchSpmRef nels 0
 
 fetchBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
-fetchBuff (Buffer rptr wptr nels elems size) (lower, upper) src = do
+fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
     let total = upper - lower + 1
     written <- initRef (value 0 :: Data Length)
     -- until all data is written
     while ((<total) <$> getRef written) $ do
         -- wait for empty space in the buffer
-        while ((==size) <$> flushSpmRef nels) $ return ()
+        while (do
+            rx <- flushSpmRef rptr
+            wx <- flushSpmRef wptr
+            return $ (wx + 1) `rem` size == rx) $ return ()
         -- calculate items left
         done <- getRef written
         let left = total - done
         -- how many items could be writen in this round
-        count <- flushSpmRef nels
-        let empty = size - count
+        rx <- flushSpmRef rptr
+        wx <- flushSpmRef wptr
+        let available = ((size + wx - rx) `rem` size)
+            empty = size - available - 1  -- one slot is reserved in this setup
             toWrite = min left empty
             start = lower + done
-        wx <- flushSpmRef wptr
         iff (wx + toWrite <= size)
             (fetchTo wx elems (start, start + toWrite - 1) src)
             (do let toEnd = size - wx
@@ -76,25 +77,27 @@ fetchBuff (Buffer rptr wptr nels elems size) (lower, upper) src = do
                 fetchTo 0 elems (start', start' + (toWrite - toEnd) - 1) src)
         fetchSpmRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
--- should be mutexed together with the getter of count above
-        fetchSpmRef nels (count + toWrite)
 
 flushBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
-flushBuff (Buffer rptr wptr nels elems size) (lower, upper) dst = do
+flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
     let total = upper - lower + 1
     read <- initRef (value 0 :: Data Length)
     -- until all data is read
     while ((<total) <$> getRef read) $ do
         -- wait for items in the buffer
-        while ((<=0) <$> flushSpmRef nels) $ return ()
+        while (do
+            rx <- flushSpmRef rptr
+            wx <- flushSpmRef wptr
+            return $ rx == wx) $ return ()
         -- calculate items left
         done <- getRef read
         let left = total - done
         -- how many items could it read in this round
-        available <- flushSpmRef nels
+        rx <- flushSpmRef rptr
+        wx <- flushSpmRef wptr
+        let available = (size + wx -rx) `rem` size
         let toRead = min left available
             start = lower + done
-        rx <- flushSpmRef rptr
         iff (rx + toRead <= size)
             (flushFrom rx elems (start, start + toRead - 1) dst)
             (do let toEnd = size - rx
@@ -103,37 +106,33 @@ flushBuff (Buffer rptr wptr nels elems size) (lower, upper) dst = do
                 flushFrom 0 elems (start', start' + toRead - (size - rx) - 1) dst)
         fetchSpmRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
--- should be mutexed together with the getter of count above
-        fetchSpmRef nels (available - toRead)
 
 writeBuff :: SmallType a => Data a -> Buffer a -> Comp ()
-writeBuff elem (Buffer rptr wptr nels elems size) = do
-    while ((==size) <$> getSpmRef nels) $ return ()
+writeBuff elem (Buffer rptr wptr elems size) = do
+    while (do
+        rx <- getSpmRef rptr
+        wx <- getSpmRef wptr
+        return $ (wx + 1) `rem` size == rx) $ return ()
     wx <- getSpmRef wptr
-    setSpmRef ((wx + 1) `rem` size) wptr
     setArr wx elem elems
--- mutex start
-    count :: Data Length <- getSpmRef nels
-    setSpmRef (count + 1) nels
--- mutex end
+    setSpmRef ((wx + 1) `rem` size) wptr
 
 readBuff :: SmallType a => Buffer a -> Comp (Data a)
-readBuff (Buffer rptr wptr nels elems size) = do
-    while ((<=0) <$> getSpmRef nels) $ return ()
+readBuff (Buffer rptr wptr elems size) = do
+    while (do
+        rx <- getSpmRef rptr
+        wx <- getSpmRef wptr
+        return $ rx == wx) $ return ()
     rx <- getSpmRef rptr
-    setSpmRef ((rx + 1) `rem` size) rptr
     elem <- getArr rx elems
--- mutex start
-    count :: Data Length <- getSpmRef nels
-    setSpmRef (count - 1) nels
--- mutex end
+    setSpmRef ((rx + 1) `rem` size) rptr
     return elem
 
 
 ringBuffers :: Size -> Size -> Multicore ()
 ringBuffers ioChunkSize bufferSize = do
     b0 <- allocBuff 0 bufferSize
-    b1 <- allocBuff 1 bufferSize
+    b1 :: Buffer Int32 <- allocBuff 1 bufferSize
     b2 <- allocBuff 2 bufferSize
     onHost $ do
         initBuff b0
@@ -170,7 +169,7 @@ g input output = while (return $ true) $ do
 
 ------------------------------------------------------------
 
-test = ringBuffers 4 2
+test = ringBuffers 3 2
 
 testAll = do
     icompileAll `onParallella` test
