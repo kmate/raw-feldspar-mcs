@@ -68,3 +68,7 @@ g (ri, input) (ro, output) = while (return $ true) $ do
 ------------------------------------------------------------
 
 testAll = icompileAll `onParallella` pipeline
+
+runTestCompiled = runCompiled' opts pipeline
+  where
+    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
