@@ -1,12 +1,12 @@
-module RingBuffers where
+module Pipes where
 
 import qualified Prelude
 
 import Feldspar.Multicore
 
 
-ringBuffers :: Size -> Size -> Multicore ()
-ringBuffers ioChunkSize bufferSize = do
+pipes :: Size -> Size -> Multicore ()
+pipes ioChunkSize bufferSize = do
     p0 <- allocPipe 0 bufferSize
     p1 <- allocPipe 1 bufferSize
     p2 <- allocPipe 2 bufferSize
@@ -45,7 +45,7 @@ g input output = forever $ do
 
 ------------------------------------------------------------
 
-test = ringBuffers 3 2
+test = pipes 3 2
 
 testAll = do
     icompileAll `onParallella` test
