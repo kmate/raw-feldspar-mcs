@@ -22,10 +22,10 @@ flushSpmRef spmRef = do
     readArr (unSpmRef spmRef) (0,0) tmp
     getArr 0 tmp
 
-getSpmRef :: SmallType a => SpmRef a -> Comp (Data a)
+getSpmRef :: SmallType a => SpmRef a -> CoreComp (Data a)
 getSpmRef = getArr 0 . unSpmRef
 
-setSpmRef :: SmallType a => Data a -> SpmRef a-> Comp ()
+setSpmRef :: SmallType a => Data a -> SpmRef a-> CoreComp ()
 setSpmRef value = setArr 0 value . unSpmRef
 
 
@@ -107,7 +107,7 @@ flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
         fetchSpmRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 
-writeBuff :: SmallType a => Data a -> Buffer a -> Comp ()
+writeBuff :: SmallType a => Data a -> Buffer a -> CoreComp ()
 writeBuff elem (Buffer rptr wptr elems size) = do
     while (do
         rx <- getSpmRef rptr
@@ -117,7 +117,7 @@ writeBuff elem (Buffer rptr wptr elems size) = do
     setArr wx elem elems
     setSpmRef ((wx + 1) `rem` size) wptr
 
-readBuff :: SmallType a => Buffer a -> Comp (Data a)
+readBuff :: SmallType a => Buffer a -> CoreComp (Data a)
 readBuff (Buffer rptr wptr elems size) = do
     while (do
         rx <- getSpmRef rptr
@@ -156,12 +156,12 @@ ringBuffers ioChunkSize bufferSize = do
                 lift $ printf "> %d\n" item
 
 
-f :: Buffer Int32 -> Buffer Int32 -> Comp ()
+f :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
 f input output = while (return $ true) $ do
     elem <- readBuff input
     writeBuff (elem + 1) output
 
-g :: Buffer Int32 -> Buffer Int32 -> Comp ()
+g :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
 g input output = while (return $ true) $ do
     elem <- readBuff input
     writeBuff (elem * 2) output

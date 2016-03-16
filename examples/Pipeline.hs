@@ -44,7 +44,7 @@ pipeline = do
                 lift $ printf "> %d\n" item
 
 
-f :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> Comp ()
+f :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> CoreComp ()
 f (ri, input) (ro, output) = while (return $ true) $ do
     while (not <$> getArr 0 ri) $ return ()
     setArr 0 false ri
@@ -54,7 +54,7 @@ f (ri, input) (ro, output) = while (return $ true) $ do
         setArr i (item + 1) output
     setArr 0 true ro
 
-g :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> Comp ()
+g :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> CoreComp ()
 g (ri, input) (ro, output) = while (return $ true) $ do
     while (not <$> getArr 0 ri) $ return ()
     setArr 0 false ri

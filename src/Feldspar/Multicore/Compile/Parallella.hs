@@ -97,7 +97,7 @@ compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
 compMulticoreCMD (WriteArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
 compMulticoreCMD (ReadArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId comp
+    compCore coreId $ unCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"

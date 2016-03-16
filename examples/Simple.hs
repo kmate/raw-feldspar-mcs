@@ -28,13 +28,13 @@ simple = do
         printf "\n"
 
 
-f :: Arr Int32 -> Arr Int32 -> Comp ()
+f :: Arr Int32 -> Arr Int32 -> CoreComp ()
 f input output =
     for (0, 1, Incl 9) $ \i -> do
         item :: Data Int32 <- getArr i input
         setArr i (item + 1) output
 
-g :: Arr Int32 -> Arr Int32 -> Comp ()
+g :: Arr Int32 -> Arr Int32 -> CoreComp ()
 g input output =
     for (0, 1, Incl 9) $ \i -> do
         item :: Data Int32 <- getArr i input

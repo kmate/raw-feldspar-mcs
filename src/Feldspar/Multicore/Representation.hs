@@ -21,6 +21,23 @@ type IndexRange = (Data Index, Data Index)
 
 
 --------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+newtype LocalArr a = LocalArr { unLocalArr :: Arr a }
+
+newtype CoreComp a = CoreComp { unCoreComp :: Comp a }
+  deriving (Functor, Applicative, Monad)
+
+instance MonadComp CoreComp
+  where
+    liftComp        = CoreComp . liftComp
+    iff cond t f    = CoreComp $ iff cond (unCoreComp t) (unCoreComp f)
+    for range body  = CoreComp $ for range (unCoreComp . body)
+    while cont body = CoreComp $ while (unCoreComp cont) (unCoreComp body)
+
+
+--------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
@@ -32,7 +49,7 @@ data MulticoreCMD (prog :: * -> *) a
     ReadArr :: SmallType a
             => Data Index -> Arr a
             -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    OnCore :: CoreId -> Comp () -> MulticoreCMD prog ()
+    OnCore :: CoreId -> CoreComp () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
@@ -84,7 +101,7 @@ runMulticoreCMD (ReadArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr (i - lower + offset) spm
         setArr i item ram
-runMulticoreCMD (OnCore coreId comp) = void $ fork $liftRun comp
+runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ unCoreComp comp
 
 instance Interp MulticoreCMD Run where interp = runMulticoreCMD
 

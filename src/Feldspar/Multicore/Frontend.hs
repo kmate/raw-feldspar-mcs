@@ -22,7 +22,7 @@ writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
 readArrAt :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
 readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
-onCore :: CoreId -> Comp () -> Host ()
+onCore :: CoreId -> CoreComp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
 
 
