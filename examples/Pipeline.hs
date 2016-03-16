@@ -10,11 +10,11 @@ n = 4
 
 pipeline :: Multicore ()
 pipeline = do
-    r0 :: Arr Bool <- allocArr 0 1
+    r0 :: LocalArr Bool <- allocArr 0 1
     a0 <- allocArr 0 n
-    r1 :: Arr Bool <- allocArr 1 1
+    r1 :: LocalArr Bool <- allocArr 1 1
     a1 <- allocArr 1 n
-    r2 :: Arr Bool <- allocArr 2 1
+    r2 :: LocalArr Bool <- allocArr 2 1
     a2 <- allocArr 2 n
     onHost $ do
         check <- initArr [False]
@@ -44,25 +44,25 @@ pipeline = do
                 lift $ printf "> %d\n" item
 
 
-f :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> CoreComp ()
-f (ri, input) (ro, output) = while (return $ true) $ do
-    while (not <$> getArr 0 ri) $ return ()
-    setArr 0 false ri
+f :: (LocalArr Bool, LocalArr Int32) -> (LocalArr Bool, LocalArr Int32) -> CoreComp ()
+f (ri, input) (ro, output) = forever $ do
+    while (not <$> (getArr 0 -< ri)) $ return ()
+    setArr 0 false -< ri
 
     for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item + 1) output
-    setArr 0 true ro
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item + 1) -< output
+    setArr 0 true -< ro
 
-g :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> CoreComp ()
-g (ri, input) (ro, output) = while (return $ true) $ do
-    while (not <$> getArr 0 ri) $ return ()
-    setArr 0 false ri
+g :: (LocalArr Bool, LocalArr Int32) -> (LocalArr Bool, LocalArr Int32) -> CoreComp ()
+g (ri, input) (ro, output) = forever $ do
+    while (not <$> (getArr 0 -< ri)) $ return ()
+    setArr 0 false -< ri
 
     for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item * 2) output
-    setArr 0 true ro
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item * 2) -< output
+    setArr 0 true -< ro
 
 
 ------------------------------------------------------------

@@ -4,8 +4,8 @@ module Feldspar.Multicore
 
 import Control.Monad.Trans (lift)
 
-import Feldspar as F
-import Feldspar.Run as F
+import Feldspar as F hiding (forever)
+import Feldspar.Run as F hiding (forever)
 
 import Feldspar.Multicore.Compile.Parallella as F
 import Feldspar.Multicore.Frontend as F

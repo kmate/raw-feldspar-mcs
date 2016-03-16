@@ -5,7 +5,7 @@ import qualified Prelude
 import Feldspar.Multicore
 
 
-newtype SpmRef a = SpmRef { unSpmRef :: Arr a }
+newtype SpmRef a = SpmRef { unSpmRef :: LocalArr a }
 
 allocSpmRef :: SmallType a => CoreId -> Multicore (SpmRef a)
 allocSpmRef coreId = SpmRef <$> allocArr coreId 1
@@ -23,16 +23,16 @@ flushSpmRef spmRef = do
     getArr 0 tmp
 
 getSpmRef :: SmallType a => SpmRef a -> CoreComp (Data a)
-getSpmRef = getArr 0 . unSpmRef
+getSpmRef = getArr 0 <=< local . unSpmRef
 
 setSpmRef :: SmallType a => Data a -> SpmRef a-> CoreComp ()
-setSpmRef value = setArr 0 value . unSpmRef
+setSpmRef value = setArr 0 value <=< local . unSpmRef
 
 
 data Buffer a = Buffer
     { readPtr  :: SpmRef Index
     , writePtr :: SpmRef Index
-    , elements :: Arr a
+    , elements :: LocalArr a
     , maxElems :: Data Length
     }
 
@@ -114,7 +114,7 @@ writeBuff elem (Buffer rptr wptr elems size) = do
         wx <- getSpmRef wptr
         return $ (wx + 1) `rem` size == rx) $ return ()
     wx <- getSpmRef wptr
-    setArr wx elem elems
+    setArr wx elem -< elems
     setSpmRef ((wx + 1) `rem` size) wptr
 
 readBuff :: SmallType a => Buffer a -> CoreComp (Data a)
@@ -124,7 +124,7 @@ readBuff (Buffer rptr wptr elems size) = do
         wx <- getSpmRef wptr
         return $ rx == wx) $ return ()
     rx <- getSpmRef rptr
-    elem <- getArr rx elems
+    elem <- getArr rx -< elems
     setSpmRef ((rx + 1) `rem` size) rptr
     return elem
 
@@ -157,12 +157,12 @@ ringBuffers ioChunkSize bufferSize = do
 
 
 f :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
-f input output = while (return $ true) $ do
+f input output = forever $ do
     elem <- readBuff input
     writeBuff (elem + 1) output
 
 g :: Buffer Int32 -> Buffer Int32 -> CoreComp ()
-g input output = while (return $ true) $ do
+g input output = forever $ do
     elem <- readBuff input
     writeBuff (elem * 2) output
 

@@ -28,17 +28,17 @@ simple = do
         printf "\n"
 
 
-f :: Arr Int32 -> Arr Int32 -> CoreComp ()
-f input output =
+f :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+f input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item + 1) output
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item + 1) -< output
 
-g :: Arr Int32 -> Arr Int32 -> CoreComp ()
-g input output =
+g :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+g input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item * 2) output
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item * 2) -< output
 
 
 ------------------------------------------------------------

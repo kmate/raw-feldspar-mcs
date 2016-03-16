@@ -112,7 +112,9 @@ compMulticoreCMD (OnCore coreId comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String -> Arr a-> Arr a -> Data Index -> IndexRange -> RunGen ()
+compCopy :: SmallType a => String
+         -> LocalArr a-> Arr a
+         -> Data Index -> IndexRange -> RunGen ()
 compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
@@ -121,7 +123,7 @@ compCopy op spm ram offset (lower, upper) = do
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg spm
+        , arrArg (unLocalArr spm)
         , arrArg ram
         , valArg offset
         , valArg lower
@@ -190,11 +192,11 @@ getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
     in  (ty, C._includes env)
 
-mkArrayRef :: SmallType a => VarId -> Arr a
-mkArrayRef name = Arr $ Actual $ Imp.ArrComp name
+mkArrayRef :: SmallType a => VarId -> LocalArr a
+mkArrayRef name = LocalArr $ Arr $ Actual $ Imp.ArrComp name
 
-arrayRefName :: Arr a -> VarId
-arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
+arrayRefName :: LocalArr a -> VarId
+arrayRefName (LocalArr (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
