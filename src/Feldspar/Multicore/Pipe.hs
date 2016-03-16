@@ -6,6 +6,7 @@ import Feldspar
 import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Reference
 import Feldspar.Multicore.Representation
+import Feldspar.Option
 
 
 data Pipe a = Pipe
@@ -88,7 +89,19 @@ pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
         writeRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
-
+{-
+readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
+readPipe pipe = do
+    result <- readPipeA pipe
+    value <- newRef
+    caseOptionM result
+        (const $ do
+            v <- readPipe pipe
+            setRef value v)
+        (setRef value)
+    getRef value
+-}
+-- FIXME: use readPipeA implementation when it is fixed
 readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
 readPipe (Pipe rptr wptr elems size) = do
     while (do
@@ -101,11 +114,31 @@ readPipe (Pipe rptr wptr elems size) = do
     return elem
 
 writePipe :: SmallType a => Data a -> Pipe a -> CoreComp ()
-writePipe elem (Pipe rptr wptr elems size) = do
-    while (do
-        rx <- getLocalRef rptr
-        wx <- getLocalRef wptr
-        return $ (wx + 1) `rem` size == rx) $ return ()
+writePipe elem pipe = while (not <$> writePipeA elem pipe) $ return ()
+
+
+-- FIXME: `guarded` seems to be too eager
+readPipeA :: SmallType a => Pipe a -> CoreComp (Option (Data a))
+readPipeA (Pipe rptr wptr elems size) = do
+    rx <- getLocalRef rptr
     wx <- getLocalRef wptr
-    setArr wx elem -< elems
-    setLocalRef wptr ((wx + 1) `rem` size)
+    guarded "no data" (rx /= wx) <$> do
+        Prelude.error "evaluated!"
+        rx <- getLocalRef rptr
+        elem <- getArr rx -< elems
+        setLocalRef rptr ((rx + 1) `rem` size)
+        return elem
+
+writePipeA :: SmallType a => Data a -> Pipe a -> CoreComp (Data Bool)
+writePipeA elem (Pipe rptr wptr elems size) = do
+    rx <- getLocalRef rptr
+    wx <- getLocalRef wptr
+    done <- initRef false
+    iff ((wx + 1) `rem` size == rx)
+        (setRef done false)
+        (do
+            wx <- getLocalRef wptr
+            setArr wx elem -< elems
+            setLocalRef wptr ((wx + 1) `rem` size)
+            setRef done true)
+    getRef done
