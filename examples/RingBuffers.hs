@@ -6,23 +6,23 @@ import Feldspar.Multicore
 
 
 data Buffer a = Buffer
-    { readPtr  :: SpmRef Index
-    , writePtr :: SpmRef Index
+    { readPtr  :: LocalRef Index
+    , writePtr :: LocalRef Index
     , elements :: LocalArr a
     , maxElems :: Data Length
     }
 
 allocBuff :: SmallType a => CoreId -> Size -> Multicore (Buffer a)
 allocBuff coreId size = do
-    rptr  <- allocSpmRef coreId
-    wptr  <- allocSpmRef coreId
+    rptr  <- allocRef coreId
+    wptr  <- allocRef coreId
     elems <- allocArr coreId (size + 1)
     return $ Buffer rptr wptr elems (value size + 1)
 
 initBuff :: SmallType a => Buffer a -> Host ()
 initBuff (Buffer rptr wptr _ _) = do
-    fetchSpmRef rptr 0
-    fetchSpmRef wptr 0
+    writeRef rptr 0
+    writeRef wptr 0
 
 fetchBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
 fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
@@ -32,15 +32,15 @@ fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
     while ((<total) <$> getRef written) $ do
         -- wait for empty space in the buffer
         while (do
-            rx <- flushSpmRef rptr
-            wx <- flushSpmRef wptr
+            rx <- readRef rptr
+            wx <- readRef wptr
             return $ (wx + 1) `rem` size == rx) $ return ()
         -- calculate items left
         done <- getRef written
         let left = total - done
         -- how many items could be writen in this round
-        rx <- flushSpmRef rptr
-        wx <- flushSpmRef wptr
+        rx <- readRef rptr
+        wx <- readRef wptr
         let available = ((size + wx - rx) `rem` size)
             empty = size - available - 1  -- one slot is reserved in this setup
             toWrite = min left empty
@@ -51,7 +51,7 @@ fetchBuff (Buffer rptr wptr elems size) (lower, upper) src = do
                 writeArrAt wx elems (start, start + toEnd - 1) src
                 let start' = start + toEnd
                 writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
-        fetchSpmRef wptr ((wx + toWrite) `rem` size)
+        writeRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
 flushBuff :: SmallType a => Buffer a -> IndexRange -> Arr a -> Host ()
@@ -62,15 +62,15 @@ flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
     while ((<total) <$> getRef read) $ do
         -- wait for items in the buffer
         while (do
-            rx <- flushSpmRef rptr
-            wx <- flushSpmRef wptr
+            rx <- readRef rptr
+            wx <- readRef wptr
             return $ rx == wx) $ return ()
         -- calculate items left
         done <- getRef read
         let left = total - done
         -- how many items could it read in this round
-        rx <- flushSpmRef rptr
-        wx <- flushSpmRef wptr
+        rx <- readRef rptr
+        wx <- readRef wptr
         let available = (size + wx -rx) `rem` size
         let toRead = min left available
             start = lower + done
@@ -80,28 +80,28 @@ flushBuff (Buffer rptr wptr elems size) (lower, upper) dst = do
                 readArrAt rx elems (start, start + toEnd - 1) dst
                 let start' = start + toEnd
                 readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
-        fetchSpmRef rptr ((rx + toRead) `rem` size)
+        writeRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 
 writeBuff :: SmallType a => Data a -> Buffer a -> CoreComp ()
 writeBuff elem (Buffer rptr wptr elems size) = do
     while (do
-        rx <- getSpmRef rptr
-        wx <- getSpmRef wptr
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptr
         return $ (wx + 1) `rem` size == rx) $ return ()
-    wx <- getSpmRef wptr
+    wx <- getLocalRef wptr
     setArr wx elem -< elems
-    setSpmRef ((wx + 1) `rem` size) wptr
+    setLocalRef ((wx + 1) `rem` size) wptr
 
 readBuff :: SmallType a => Buffer a -> CoreComp (Data a)
 readBuff (Buffer rptr wptr elems size) = do
     while (do
-        rx <- getSpmRef rptr
-        wx <- getSpmRef wptr
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptr
         return $ rx == wx) $ return ()
-    rx <- getSpmRef rptr
+    rx <- getLocalRef rptr
     elem <- getArr rx -< elems
-    setSpmRef ((rx + 1) `rem` size) rptr
+    setLocalRef ((rx + 1) `rem` size) rptr
     return elem
 
 

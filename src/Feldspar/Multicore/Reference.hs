@@ -5,25 +5,25 @@ import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Representation
 
 
-newtype SpmRef a = SpmRef { unSpmRef :: LocalArr a }
+newtype LocalRef a = LocalRef { unLocalRef :: LocalArr a }
 
-allocSpmRef :: SmallType a => CoreId -> Multicore (SpmRef a)
-allocSpmRef coreId = SpmRef <$> allocArr coreId 1
+allocRef :: SmallType a => CoreId -> Multicore (LocalRef a)
+allocRef coreId = LocalRef <$> allocArr coreId 1
 
-fetchSpmRef :: SmallType a => SpmRef a -> Data a -> Host ()
-fetchSpmRef spmRef value = do
+writeRef :: SmallType a => LocalRef a -> Data a -> Host ()
+writeRef (LocalRef arr) value = do
     tmp <- newArr 1
     setArr 0 value tmp
-    writeArr (unSpmRef spmRef) (0,0) tmp
+    writeArr arr (0,0) tmp
 
-flushSpmRef :: SmallType a => SpmRef a -> Host (Data a)
-flushSpmRef spmRef = do
+readRef :: SmallType a => LocalRef a -> Host (Data a)
+readRef (LocalRef arr) = do
     tmp <- newArr 1
-    readArr (unSpmRef spmRef) (0,0) tmp
+    readArr arr (0,0) tmp
     getArr 0 tmp
 
-getSpmRef :: SmallType a => SpmRef a -> CoreComp (Data a)
-getSpmRef = getArr 0 <=< local . unSpmRef
+getLocalRef :: SmallType a => LocalRef a -> CoreComp (Data a)
+getLocalRef = getArr 0 <=< local . unLocalRef
 
-setSpmRef :: SmallType a => Data a -> SpmRef a-> CoreComp ()
-setSpmRef value = setArr 0 value <=< local . unSpmRef
+setLocalRef :: SmallType a => Data a -> LocalRef a-> CoreComp ()
+setLocalRef value = setArr 0 value <=< local . unLocalRef
