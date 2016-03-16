@@ -49,9 +49,9 @@ instance KnownNat coreId => MonadComp (CoreComp coreId)
 data MulticoreCMD (prog :: * -> *) a
   where
     Fetch  :: (KnownNat coreId, SmallType a)
-           => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> MulticoreCMD prog ()
+           => LocalArr coreId a -> Data Index -> IndexRange -> Arr a -> MulticoreCMD prog ()
     Flush  :: (KnownNat coreId, SmallType a)
-           => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> MulticoreCMD prog ()
+           => LocalArr coreId a -> Data Index -> IndexRange -> Arr a -> MulticoreCMD prog ()
     OnCore :: KnownNat coreId => CoreComp coreId () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
@@ -131,9 +131,9 @@ newtype Multicore a = Multicore { unMulticore :: Program (AllocCMD Exp.CExp) a }
   deriving (Functor, Applicative, Monad)
 
 
-runAllocHostCMD :: (AllocCMD exp) Run a -> Run a
-runAllocHostCMD (Alloc size)  = LocalArr <$> newArr (value size)
-runAllocHostCMD (OnHost host) = runHost host
+runAllocCMD :: (AllocCMD exp) Run a -> Run a
+runAllocCMD (Alloc size)  = LocalArr <$> newArr (value size)
+runAllocCMD (OnHost host) = runHost host
 
 instance Interp (AllocCMD exp) Run where interp = runAllocCMD
 

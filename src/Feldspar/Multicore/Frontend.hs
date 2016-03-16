@@ -36,8 +36,8 @@ fetchTo  :: (KnownNat coreId, SmallType a)
          => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
 fetchTo offset spm range = Host . singleInj . Fetch spm offset range
 
-flushFrom flush :: (KnownNat coreId, SmallType a)
-                => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
+flushFrom :: (KnownNat coreId, SmallType a)
+          => Data Index -> LocalArr coreId a -> IndexRange -> Arr a -> Host ()
 flushFrom offset spm range = Host . singleInj . Flush spm offset range
 
 onCore :: KnownNat coreId => CoreComp coreId () -> Host ()

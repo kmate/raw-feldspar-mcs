@@ -77,7 +77,7 @@ compAllocCMD (OnHost host) = do
     lift $ runGen s $ interpretT lift $ unHost host
 
 getAllocHostCoreId :: forall (coreId :: Nat) exp prog a . KnownNat coreId
-                   => AllocHostCMD exp prog (LocalArr coreId a) -> CoreId
+                   => AllocCMD exp prog (LocalArr coreId a) -> CoreId
 getAllocHostCoreId _ = fromIntegral $ natVal (Proxy :: Proxy coreId)
 
 

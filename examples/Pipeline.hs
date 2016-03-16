@@ -1,6 +1,7 @@
 module Pipeline where
 
 import qualified Prelude
+import GHC.TypeLits
 
 import Feldspar.Multicore
 
@@ -10,12 +11,12 @@ n = 4
 
 pipeline :: Multicore ()
 pipeline = do
-    r0 :: Arr Bool <- alloc 0 1
-    a0 <- alloc 0 n
-    r1 :: Arr Bool <- alloc 1 1
-    a1 <- alloc 1 n
-    r2 :: Arr Bool <- alloc 2 1
-    a2 <- alloc 2 n
+    r0 <- alloc 1
+    a0 <- alloc n
+    r1 <- alloc 1
+    a1 <- alloc n
+    r2 <- alloc 1
+    a2 <- alloc n
     onHost $ do
         check <- initArr [False]
         reset <- initArr [False]
@@ -23,8 +24,8 @@ pipeline = do
         fetch r0 (0,0) reset
         fetch r1 (0,0) reset
         fetch r2 (0,0) reset
-        onCore 0 (f (r0, a0) (r1, a1))
-        onCore 1 (g (r1, a1) (r2, a2))
+        onCore (f (r0, a0) (r1, a1) :: CoreComp 0 ())
+        onCore (g (r1, a1) (r2, a2))
 
         while (return $ true) $ do
             input :: Arr Int32 <- newArr $ value n
@@ -44,25 +45,27 @@ pipeline = do
                 lift $ printf "> %d\n" item
 
 
-f :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> Comp ()
+f :: (KnownNat a, KnownNat (a + 1))
+  => (LocalArr a Bool, LocalArr a Int32) -> (LocalArr (a + 1) Bool, LocalArr (a + 1) Int32) -> CoreComp a ()
 f (ri, input) (ro, output) = while (return $ true) $ do
-    while (not <$> getArr 0 ri) $ return ()
-    setArr 0 false ri
+    while (not <$> getLArr 0 ri) $ return ()
+    setLArr 0 false ri
 
     for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item + 1) output
-    setArr 0 true ro
+        item :: Data Int32 <- getLArr i input
+        setLArr i (item + 1) output
+    setLArr 0 true ro
 
-g :: (Arr Bool, Arr Int32) -> (Arr Bool, Arr Int32) -> Comp ()
+g :: (KnownNat a, KnownNat (a + 1))
+  => (LocalArr a Bool, LocalArr a Int32) -> (LocalArr (a + 1) Bool, LocalArr (a + 1) Int32) -> CoreComp a ()
 g (ri, input) (ro, output) = while (return $ true) $ do
-    while (not <$> getArr 0 ri) $ return ()
-    setArr 0 false ri
+    while (not <$> getLArr 0 ri) $ return ()
+    setLArr 0 false ri
 
     for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item * 2) output
-    setArr 0 true ro
+        item :: Data Int32 <- getLArr i input
+        setLArr i (item * 2) output
+    setLArr 0 true ro
 
 
 ------------------------------------------------------------
