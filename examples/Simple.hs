@@ -43,4 +43,15 @@ g input output = do
 
 ------------------------------------------------------------
 
-testAll = icompileAll `onParallella` simple
+test = simple
+
+testAll = do
+    icompileAll `onParallella` test
+    let modules = compileAll `onParallella` test
+    forM_ modules $ \(name, contents) -> do
+        let name' = if name Prelude.== "main" then "host" else name
+        writeFile (name' Prelude.++ ".c") contents
+
+runTestCompiled = runCompiled' opts test
+  where
+    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
