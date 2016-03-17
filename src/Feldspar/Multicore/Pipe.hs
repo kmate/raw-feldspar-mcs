@@ -1,6 +1,7 @@
 module Feldspar.Multicore.Pipe where
 
 import qualified Prelude
+import Control.Monad.Trans
 
 import Feldspar
 import Feldspar.Multicore.Frontend
@@ -89,41 +90,27 @@ pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
         writeRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
-{-
+
 readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
 readPipe pipe = do
-    result <- readPipeA pipe
     value <- newRef
-    caseOptionM result
-        (const $ do
-            v <- readPipe pipe
-            setRef value v)
-        (setRef value)
+    noValue <- initRef true
+    while (getRef noValue) $ do
+        caseOptionT (readPipeA pipe)
+            (const $ return ())
+            (setRef value >=> (const $ setRef noValue false))
     getRef value
--}
--- FIXME: use readPipeA implementation when it is fixed
-readPipe :: SmallType a => Pipe a -> CoreComp (Data a)
-readPipe (Pipe rptr wptr elems size) = do
-    while (do
-        rx <- getLocalRef rptr
-        wx <- getLocalRef wptr
-        return $ rx == wx) $ return ()
-    rx <- getLocalRef rptr
-    elem <- getArr rx -< elems
-    setLocalRef rptr ((rx + 1) `rem` size)
-    return elem
 
 writePipe :: SmallType a => Data a -> Pipe a -> CoreComp ()
 writePipe elem pipe = while (not <$> writePipeA elem pipe) $ return ()
 
 
--- FIXME: `guarded` seems to be too eager
-readPipeA :: SmallType a => Pipe a -> CoreComp (Option (Data a))
+readPipeA :: SmallType a => Pipe a -> OptionT CoreComp (Data a)
 readPipeA (Pipe rptr wptr elems size) = do
-    rx <- getLocalRef rptr
-    wx <- getLocalRef wptr
-    guarded "no data" (rx /= wx) <$> do
-        Prelude.error "evaluated!"
+    rx <- lift $ getLocalRef rptr
+    wx <- lift $ getLocalRef wptr
+    guarded "no data" (rx /= wx) ()
+    lift $ do
         rx <- getLocalRef rptr
         elem <- getArr rx -< elems
         setLocalRef rptr ((rx + 1) `rem` size)
