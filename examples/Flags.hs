@@ -66,8 +66,15 @@ g (ri, input) (ro, output) = forever $ do
 
 ------------------------------------------------------------
 
-testAll = icompileAll `onParallella` flags
+test = flags
 
-runTestCompiled = runCompiled' opts flags
+testAll = do
+    icompileAll `onParallella` test
+    let modules = compileAll `onParallella` test
+    forM_ modules $ \(name, contents) -> do
+        let name' = if name Prelude.== "main" then "host" else name
+        writeFile (name' Prelude.++ ".c") contents
+
+runTestCompiled = runCompiled' opts test
   where
     opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}

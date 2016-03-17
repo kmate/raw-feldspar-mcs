@@ -52,8 +52,8 @@ wrapESDK program = do
     callProc "e_open" [ groupAddr
                       , valArg (value 0 :: Data Int32)
                       , valArg (value 0 :: Data Int32)
-                      , valArg (value 3 :: Data Int32)
-                      , valArg (value 3 :: Data Int32) ]
+                      , valArg (value 4 :: Data Int32)
+                      , valArg (value 4 :: Data Int32) ]
     callProc "e_reset_group" [ groupAddr ]
     result <- runGen (start groupAddr) program
     callProc "e_close" [ groupAddr ]
