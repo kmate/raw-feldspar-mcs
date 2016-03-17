@@ -50,8 +50,8 @@ wrapESDK program = do
     callProc "e_open" [ groupAddr
                       , valArg (value 0 :: Data Int32)
                       , valArg (value 0 :: Data Int32)
-                      , valArg (value 3 :: Data Int32)
-                      , valArg (value 3 :: Data Int32) ]
+                      , valArg (value 4 :: Data Int32)
+                      , valArg (value 4 :: Data Int32) ]
     callProc "e_reset_group" [ groupAddr ]
     result <- runGen (start groupAddr) program
     callProc "e_close" [ groupAddr ]
@@ -61,7 +61,7 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(Alloc coreId size) = do
+compAllocCMD cmd@(AllocArr coreId size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
@@ -94,10 +94,10 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (Fetch spm offset range ram) = compCopy "e_fetch" spm ram offset range
-compMulticoreCMD (Flush spm offset range ram) = compCopy "e_flush" spm ram offset range
+compMulticoreCMD (WriteArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
+compMulticoreCMD (ReadArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId comp
+    compCore coreId $ unCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -112,7 +112,9 @@ compMulticoreCMD (OnCore coreId comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String -> Arr a-> Arr a -> Data Index -> IndexRange -> RunGen ()
+compCopy :: SmallType a => String
+         -> LocalArr a-> Arr a
+         -> Data Index -> IndexRange -> RunGen ()
 compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
@@ -121,7 +123,7 @@ compCopy op spm ram offset (lower, upper) = do
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg spm
+        , arrArg (unLocalArr spm)
         , arrArg ram
         , valArg offset
         , valArg lower
@@ -190,11 +192,11 @@ getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
     in  (ty, C._includes env)
 
-mkArrayRef :: SmallType a => VarId -> Arr a
-mkArrayRef name = Arr $ Actual $ Imp.ArrComp name
+mkArrayRef :: SmallType a => VarId -> LocalArr a
+mkArrayRef name = LocalArr $ Arr $ Actual $ Imp.ArrComp name
 
-arrayRefName :: Arr a -> VarId
-arrayRefName (Arr (Actual (Imp.ArrComp name))) = name
+arrayRefName :: LocalArr a -> VarId
+arrayRefName (LocalArr (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------

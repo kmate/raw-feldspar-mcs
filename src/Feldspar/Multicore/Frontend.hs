@@ -7,22 +7,42 @@ import Feldspar.Multicore.Representation
 
 
 --------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+local :: LocalArr a -> CoreComp (Arr a)
+local = return . unLocalArr
+
+(-<) :: (Arr a -> CoreComp b) -> LocalArr a -> CoreComp b
+action -< arr = action =<< local arr
+
+infixr 1 -<
+
+forever :: CoreComp () -> CoreComp ()
+forever = while (return $ true)
+
+
+--------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
-fetch :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-fetch = fetchTo 0
+writeArr :: SmallType a => LocalArr a -> IndexRange -> Arr a -> Host ()
+writeArr = writeArrAt 0
 
-flush :: SmallType a => Arr a -> IndexRange -> Arr a -> Host ()
-flush = flushFrom 0
+readArr :: SmallType a => LocalArr a -> IndexRange -> Arr a -> Host ()
+readArr = readArrAt 0
 
-fetchTo :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
-fetchTo offset spm range = Host . singleInj . Fetch spm offset range
+writeArrAt :: SmallType a
+           => Data Index -> LocalArr a
+           -> IndexRange -> Arr a -> Host ()
+writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
 
-flushFrom :: SmallType a => Data Index -> Arr a -> IndexRange -> Arr a -> Host ()
-flushFrom offset spm range = Host . singleInj . Flush spm offset range
+readArrAt :: SmallType a
+          => Data Index -> LocalArr a
+          -> IndexRange -> Arr a -> Host ()
+readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
-onCore :: CoreId -> Comp () -> Host ()
+onCore :: CoreId -> CoreComp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
 
 
@@ -30,8 +50,8 @@ onCore coreId = Host . singleInj . OnCore coreId
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-alloc :: SmallType a => CoreId -> Size -> Multicore (Arr a)
-alloc coreId = Multicore . singleE . Alloc coreId
+allocArr :: SmallType a => CoreId -> Size -> Multicore (LocalArr a)
+allocArr coreId = Multicore . singleE . AllocArr coreId
 
 onHost :: Host a -> Multicore a
 onHost = Multicore . singleE . OnHost

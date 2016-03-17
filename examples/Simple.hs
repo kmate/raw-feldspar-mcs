@@ -5,21 +5,21 @@ import Feldspar.Multicore
 
 simple :: Multicore ()
 simple = do
-    d0 <- alloc 0 10
-    d1 <- alloc 1 10
-    d2 <- alloc 2 10
+    d0 <- allocArr 0 10
+    d1 <- allocArr 1 10
+    d2 <- allocArr 2 10
     onHost $ do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \i -> do
             printf "Item %d> " i
-            item :: Data Int32 <- lift $ fget stdin
+            item <- lift $ fget stdin
             setArr i item input
 
-        fetch d0 (0,9) input
+        writeArr d0 (0,9) input
         onCore 0 (f d0 d1)
         onCore 1 (g d1 d2)
         output <- newArr 10
-        flush d2 (0,9) output
+        readArr d2 (0,9) output
 
         printf "Output:"
         for (0, 1, Incl 9) $ \i -> do
@@ -28,19 +28,30 @@ simple = do
         printf "\n"
 
 
-f :: Arr Int32 -> Arr Int32 -> Comp ()
-f input output =
+f :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+f input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item + 1) output
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item + 1) -< output
 
-g :: Arr Int32 -> Arr Int32 -> Comp ()
-g input output =
+g :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+g input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i input
-        setArr i (item * 2) output
+        item :: Data Int32 <- getArr i -< input
+        setArr i (item * 2) -< output
 
 
 ------------------------------------------------------------
 
-testAll = icompileAll `onParallella` simple
+test = simple
+
+testAll = do
+    icompileAll `onParallella` test
+    let modules = compileAll `onParallella` test
+    forM_ modules $ \(name, contents) -> do
+        let name' = if name Prelude.== "main" then "host" else name
+        writeFile (name' Prelude.++ ".c") contents
+
+runTestCompiled = runCompiled' opts test
+  where
+    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
