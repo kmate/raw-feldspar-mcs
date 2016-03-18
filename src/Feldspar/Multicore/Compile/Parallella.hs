@@ -53,7 +53,9 @@ wrapESDK program = do
                       , valArg (value 4 :: Data Int32)
                       , valArg (value 4 :: Data Int32) ]
     callProc "e_reset_group" [ groupAddr ]
-    result <- runGen (start groupAddr) program
+    (result, state) <- runGen (start groupAddr) program
+    let sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId (inclMap state))
+    mapM_ addInclude sharedTypeIncludes
     callProc "e_close" [ groupAddr ]
     callProc "e_finalize" []
     return result
@@ -61,33 +63,38 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(AllocLArr coreId size) = do
+compAllocCMD cmd@(AllocSArr        size) = compAlloc cmd sharedId size
+compAllocCMD cmd@(AllocLArr coreId size) = compAlloc cmd coreId size
+compAllocCMD (OnHost host) = do
+    s <- get
+    lift $ evalGen s $ interpretT lift $ unHost host
+
+compAlloc :: (ArrayWrapper arr, CompExp exp, VarPred exp a, SmallType a)
+          => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a)
+compAlloc cmd coreId size = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
-    (addr, name) <- state (allocateLocal coreId byteSize)
+    (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return $ mkArrayRef name
-compAllocCMD (OnHost host) = do
-    s <- get
-    lift $ runGen s $ interpretT lift $ unHost host
 
 
 compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
 compControlCMD (Imp.If cond t f)     = do
     s <- get
-    let t' = runGen s t
-        f' = runGen s f
+    let t' = evalGen s t
+        f' = evalGen s f
     lift $ iff cond t' f'
 compControlCMD (Imp.For range body)  = do
     s <- get
-    let body' = runGen s . body
+    let body' = evalGen s . body
     lift$ for range body'
 compControlCMD (Imp.While cond body) = do
     s <- get
-    let cond' = runGen s cond
-        body' = runGen s body
+    let cond' = evalGen s cond
+        body' = evalGen s body
     lift $ while cond' body'
 
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
@@ -96,6 +103,8 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
 compMulticoreCMD (WriteLArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
 compMulticoreCMD (ReadLArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
+compMulticoreCMD (WriteSArr offset spm range ram) = compCopy "e_fetch_dma" spm ram offset range
+compMulticoreCMD (ReadSArr  offset spm range ram) = compCopy "e_flush_dma" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
     compCore coreId $ unCoreComp comp
     groupAddr <- gets group
@@ -112,8 +121,8 @@ compMulticoreCMD (OnCore coreId comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: SmallType a => String
-         -> LocalArr a-> Arr a
+compCopy :: (ArrayWrapper arr, SmallType a) => String
+         -> arr a-> Arr a
          -> Data Index -> IndexRange -> RunGen ()
 compCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
@@ -123,7 +132,7 @@ compCopy op spm ram offset (lower, upper) = do
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg (unLocalArr spm)
+        , arrArg (unwrap spm)
         , arrArg ram
         , valArg offset
         , valArg lower
@@ -143,8 +152,11 @@ compCore coreId comp = do
 
     -- merge type includes and array definitions
     inclMap <- gets inclMap
-    let typeIncludes = fromMaybe Set.empty (Map.lookup coreId inclMap)
-        env' = env { C._includes = C._includes env `Set.union` typeIncludes
+    let coreTypeIncludes   = fromMaybe Set.empty (Map.lookup coreId   inclMap)
+        sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId inclMap)
+        env' = env { C._includes = C._includes env
+                         `Set.union` coreTypeIncludes
+                         `Set.union` sharedTypeIncludes
                    -- cenvToCUnit will reverse the order of definitions
                    , C._globals  = C._globals env ++ reverse arrayDecls }
 
@@ -236,8 +248,11 @@ data RGState = RGState
 type RunGen = StateT RGState Run
 
 
-runGen :: RGState -> RunGen a -> Run a
-runGen = flip evalStateT
+runGen :: RGState -> RunGen a -> Run (a, RGState)
+runGen = flip runStateT
+
+evalGen :: RGState -> RunGen a -> Run a
+evalGen = flip evalStateT
 
 start :: FunArg Data -> RGState
 start g = RGState
@@ -249,19 +264,24 @@ start g = RGState
     , inclMap = Map.empty
     }
 
-allocateLocal :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
-allocateLocal coreId size s@RGState{..} = ((startAddr, newName), s
-    { nextId = nextId + 1
+sharedId :: CoreId
+sharedId = maxBound  -- use the maximum representable value for shared addresses
+
+allocate :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
+allocate coreId size s@RGState{..} = ((startAddr, newName), s
+    { nextId  = nextId + 1
     , addrMap = newAddrMap
     , nameMap = Map.insert newName (coreId, startAddr) nameMap
     })
   where
-    newName = "la" ++ show nextId
+    isShared = sharedId == coreId
+    newName  = (if isShared then "sa" else "la") ++ show nextId
     (startAddr, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . addAddr) coreId addrMap
     addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
-    addAddr _ = [(bank1Base, bank1Base + size', newName)]
+    addAddr _ = [(baseAddr, baseAddr + size', newName)]
+    baseAddr = if isShared then sharedBase else bank1Base
     size' = wordAlign size
 
 hasType :: Name -> C.Type -> RGState -> RGState
@@ -286,6 +306,7 @@ type CoreCoords = (Word32, Word32)
 
 groupCoord :: CoreId -> CoreCoords
 groupCoord coreId
+    | sharedId == coreId = (0, 0)  -- for external memory transfers coordinates are unused
     | isValidCoreId coreId = coreId `divMod` 4
     | otherwise = error $ "invalid core id: " ++ show coreId
 
@@ -310,8 +331,11 @@ wordAlign addr
     | otherwise = addr - m + 4
     where m = addr `mod` 4
 
-bank1Base :: LocalAddress
+bank1Base :: LocalAddress  -- local in the address space of a core
 bank1Base = 0x2000
+
+sharedBase :: LocalAddress  -- relative to external memory base
+sharedBase = 0x1000000
 
 
 sizeOf :: C.Type -> Size
