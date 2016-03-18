@@ -9,7 +9,7 @@ newtype LocalRef a = LocalRef { unLocalRef :: LocalArr a }
 
 
 allocRef :: SmallType a => CoreId -> Multicore (LocalRef a)
-allocRef coreId = LocalRef <$> allocArr coreId 1
+allocRef coreId = LocalRef <$> allocLArr coreId 1
 
 
 readRef :: SmallType a => LocalRef a -> Host (Data a)

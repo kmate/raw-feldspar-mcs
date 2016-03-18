@@ -11,11 +11,11 @@ n = 4
 flags :: Multicore ()
 flags = do
     f0 <- allocRef 0
-    b0 <- allocArr 0 n
+    b0 <- allocLArr 0 n
     f1 <- allocRef 1
-    b1 <- allocArr 1 n
+    b1 <- allocLArr 1 n
     f2 <- allocRef 2
-    b2 <- allocArr 2 n
+    b2 <- allocLArr 2 n
     onHost $ do
         writeRef f0 false
         writeRef f1 false

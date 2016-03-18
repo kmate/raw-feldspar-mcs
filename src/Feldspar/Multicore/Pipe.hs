@@ -22,7 +22,7 @@ allocPipe :: SmallType a => CoreId -> Size -> Multicore (Pipe a)
 allocPipe coreId size = do
     rptr  <- allocRef coreId
     wptr  <- allocRef coreId
-    elems <- allocArr coreId (size + 1)
+    elems <- allocLArr coreId (size + 1)
     return $ Pipe rptr wptr elems (value size + 1)
 
 initPipe :: SmallType a => Pipe a -> Host ()

@@ -26,6 +26,8 @@ type IndexRange = (Data Index, Data Index)
 
 newtype LocalArr a = LocalArr { unLocalArr :: Arr a }
 
+newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
+
 newtype CoreComp a = CoreComp { unCoreComp :: Comp a }
   deriving (Functor, Applicative, Monad)
 
@@ -43,19 +45,27 @@ instance MonadComp CoreComp
 
 data MulticoreCMD (prog :: * -> *) a
   where
-    WriteArr :: SmallType a
-             => Data Index -> LocalArr a
-             -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    ReadArr :: SmallType a
-            => Data Index -> LocalArr a
-            -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    WriteLArr :: SmallType a
+              => Data Index -> LocalArr a
+              -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    ReadLArr  :: SmallType a
+              => Data Index -> LocalArr a
+              -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    WriteSArr :: SmallType a
+              => Data Index -> SharedArr a
+              -> IndexRange -> Arr a -> MulticoreCMD prog ()
+    ReadSArr  :: SmallType a
+              => Data Index -> SharedArr a
+              -> IndexRange -> Arr a -> MulticoreCMD prog ()
     OnCore :: CoreId -> CoreComp () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
-    hfmap _ (WriteArr offset spm range ram) = WriteArr offset spm range ram
-    hfmap _ (ReadArr  offset spm range ram) = ReadArr  offset spm range ram
-    hfmap _ (OnCore coreId comp)            = OnCore coreId comp
+    hfmap _ (WriteLArr offset spm range ram) = WriteLArr offset spm range ram
+    hfmap _ (ReadLArr  offset spm range ram) = ReadLArr  offset spm range ram
+    hfmap _ (WriteSArr offset spm range ram) = WriteSArr offset spm range ram
+    hfmap _ (ReadSArr  offset spm range ram) = ReadSArr  offset spm range ram
+    hfmap _ (OnCore coreId comp)             = OnCore coreId comp
 
 
 type HostCMD = MulticoreCMD :+: Imp.ControlCMD Data
@@ -93,13 +103,21 @@ instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
 
 
 runMulticoreCMD :: MulticoreCMD Run a -> Run a
-runMulticoreCMD (WriteArr offset spm (lower, upper) ram) =
+runMulticoreCMD (WriteLArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr i ram
         setArr (i - lower + offset) item (unLocalArr spm)
-runMulticoreCMD (ReadArr offset spm (lower, upper) ram) =
+runMulticoreCMD (ReadLArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr (i - lower + offset) (unLocalArr spm)
+        setArr i item ram
+runMulticoreCMD (WriteSArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr i ram
+        setArr (i - lower + offset) item (unSharedArr spm)
+runMulticoreCMD (ReadSArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr (i - lower + offset) (unSharedArr spm)
         setArr i item ram
 runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ unCoreComp comp
 
@@ -112,14 +130,17 @@ instance Interp MulticoreCMD Run where interp = runMulticoreCMD
 
 data AllocCMD exp (prog :: * -> *) a
   where
-    AllocArr :: (Exp.VarPred exp a, SmallType a)
-             => CoreId -> Size -> AllocCMD exp prog (LocalArr a)
+    AllocLArr :: (Exp.VarPred exp a, SmallType a)
+              => CoreId -> Size -> AllocCMD exp prog (LocalArr a)
+    AllocSArr :: (Exp.VarPred exp a, SmallType a)
+              => Size -> AllocCMD exp prog (SharedArr a)
     OnHost :: Host a -> AllocCMD exp prog a
 
 instance HFunctor (AllocCMD exp)
   where
-    hfmap _ (AllocArr coreId size) = AllocArr coreId size
-    hfmap _ (OnHost host)          = OnHost host
+    hfmap _ (AllocLArr coreId size) = AllocLArr coreId size
+    hfmap _ (AllocSArr size)        = AllocSArr size
+    hfmap _ (OnHost host)           = OnHost host
 
 type instance IExp (AllocCMD e)       = e
 type instance IExp (AllocCMD e :+: i) = e
@@ -129,8 +150,9 @@ newtype Multicore a = Multicore { unMulticore :: Program (AllocCMD Exp.CExp) a }
 
 
 runAllocCMD :: (AllocCMD exp) Run a -> Run a
-runAllocCMD (AllocArr coreId size) = LocalArr <$> newArr (value size)
-runAllocCMD (OnHost host)          = runHost host
+runAllocCMD (AllocLArr _ size) = LocalArr  <$> newArr (value size)
+runAllocCMD (AllocSArr   size) = SharedArr <$> newArr (value size)
+runAllocCMD (OnHost host)      = runHost host
 
 instance Interp (AllocCMD exp) Run where interp = runAllocCMD
 

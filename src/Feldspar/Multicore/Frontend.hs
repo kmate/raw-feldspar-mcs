@@ -26,21 +26,27 @@ forever = while (return $ true)
 -- Host layer
 --------------------------------------------------------------------------------
 
-writeArr :: SmallType a => LocalArr a -> IndexRange -> Arr a -> Host ()
+writeArr :: (ArrayAccess arr, SmallType a) => arr a -> IndexRange -> Arr a -> Host ()
 writeArr = writeArrAt 0
 
-readArr :: SmallType a => LocalArr a -> IndexRange -> Arr a -> Host ()
+readArr :: (ArrayAccess arr, SmallType a) => arr a -> IndexRange -> Arr a -> Host ()
 readArr = readArrAt 0
 
-writeArrAt :: SmallType a
-           => Data Index -> LocalArr a
-           -> IndexRange -> Arr a -> Host ()
-writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
+class ArrayAccess arr
+  where
+    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> Host ()
+    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> Host ()
 
-readArrAt :: SmallType a
-          => Data Index -> LocalArr a
-          -> IndexRange -> Arr a -> Host ()
-readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
+instance ArrayAccess LocalArr
+  where
+    writeArrAt offset spm range = Host . singleInj . WriteLArr offset spm range
+    readArrAt offset spm range = Host . singleInj . ReadLArr offset spm range
+
+instance ArrayAccess SharedArr
+  where
+    writeArrAt offset spm range = Host . singleInj . WriteSArr offset spm range
+    readArrAt offset spm range = Host . singleInj . ReadSArr offset spm range
+
 
 onCore :: CoreId -> CoreComp () -> Host ()
 onCore coreId = Host . singleInj . OnCore coreId
@@ -50,8 +56,11 @@ onCore coreId = Host . singleInj . OnCore coreId
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-allocArr :: SmallType a => CoreId -> Size -> Multicore (LocalArr a)
-allocArr coreId = Multicore . singleE . AllocArr coreId
+allocLArr :: SmallType a => CoreId -> Size -> Multicore (LocalArr a)
+allocLArr coreId = Multicore . singleE . AllocLArr coreId
+
+allocSArr :: SmallType a => Size -> Multicore (SharedArr a)
+allocSArr = Multicore . singleE . AllocSArr
 
 onHost :: Host a -> Multicore a
 onHost = Multicore . singleE . OnHost

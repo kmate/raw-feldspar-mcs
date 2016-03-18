@@ -5,9 +5,9 @@ import Feldspar.Multicore
 
 simple :: Multicore ()
 simple = do
-    d0 <- allocArr 0 10
-    d1 <- allocArr 1 10
-    d2 <- allocArr 2 10
+    d0 <- allocLArr 0 10
+    d1 <- allocLArr 1 10
+    d2 <- allocLArr 2 10
     onHost $ do
         input :: Arr Int32 <- newArr 10
         for (0, 1, Incl 9) $ \i -> do
