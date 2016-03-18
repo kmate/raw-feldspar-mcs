@@ -56,3 +56,19 @@ library
 
   hs-source-dirs: src
 
+test-suite Tests
+  type: exitcode-stdio-1.0
+
+  hs-source-dirs: tests examples
+
+  main-is: Examples.hs
+
+  default-language: Haskell2010
+
+  default-extensions:
+    ScopedTypeVariables
+
+  build-depends:
+    base,
+    raw-feldspar-mcs
+
