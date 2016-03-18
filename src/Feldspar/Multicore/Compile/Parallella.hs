@@ -64,7 +64,7 @@ compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
 compAllocCMD cmd@(AllocLArr coreId size) = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
-    (addr, name) <- state (allocate coreId byteSize)
+    (addr, name) <- state (allocateLocal coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
@@ -192,11 +192,27 @@ getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
     in  (ty, C._includes env)
 
-mkArrayRef :: SmallType a => VarId -> LocalArr a
-mkArrayRef name = LocalArr $ Arr $ Actual $ Imp.ArrComp name
 
-arrayRefName :: LocalArr a -> VarId
-arrayRefName (LocalArr (Arr (Actual (Imp.ArrComp name)))) = name
+class ArrayWrapper arr
+  where
+    wrap   :: Arr a -> arr a
+    unwrap :: arr a -> Arr a
+
+instance ArrayWrapper LocalArr
+  where
+    wrap   = LocalArr
+    unwrap = unLocalArr
+
+instance ArrayWrapper SharedArr
+  where
+    wrap   = SharedArr
+    unwrap = unSharedArr
+
+mkArrayRef :: (ArrayWrapper arr, SmallType a) => VarId -> arr a
+mkArrayRef = wrap . Arr . Actual . Imp.ArrComp
+
+arrayRefName :: ArrayWrapper arr => arr a -> VarId
+arrayRefName (unwrap -> (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
@@ -233,19 +249,19 @@ start g = RGState
     , inclMap = Map.empty
     }
 
-allocate :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
-allocate coreId size s@RGState{..} = ((startAddr, newName), s
+allocateLocal :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
+allocateLocal coreId size s@RGState{..} = ((startAddr, newName), s
     { nextId = nextId + 1
     , addrMap = newAddrMap
     , nameMap = Map.insert newName (coreId, startAddr) nameMap
     })
   where
-    newName = "spm" ++ show nextId
+    newName = "la" ++ show nextId
     (startAddr, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . addAddr) coreId addrMap
     addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
-    addAddr _ = [(bank2Base, bank2Base + size', newName)]
+    addAddr _ = [(bank1Base, bank1Base + size', newName)]
     size' = wordAlign size
 
 hasType :: Name -> C.Type -> RGState -> RGState
@@ -294,8 +310,8 @@ wordAlign addr
     | otherwise = addr - m + 4
     where m = addr `mod` 4
 
-bank2Base :: LocalAddress
-bank2Base = 0x2000
+bank1Base :: LocalAddress
+bank1Base = 0x2000
 
 
 sizeOf :: C.Type -> Size
