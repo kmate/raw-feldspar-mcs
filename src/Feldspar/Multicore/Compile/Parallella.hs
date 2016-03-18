@@ -56,6 +56,7 @@ wrapESDK program = do
     (result, state) <- runGen (start groupAddr) program
     let sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId (inclMap state))
     mapM_ addInclude sharedTypeIncludes
+    mapM_ (callProc "e_free" . return . snd) (Map.toList $ shmMap state)
     callProc "e_close" [ groupAddr ]
     callProc "e_finalize" []
     return result
@@ -63,14 +64,19 @@ wrapESDK program = do
 
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(AllocSArr        size) = compAlloc cmd sharedId size
-compAllocCMD cmd@(AllocLArr coreId size) = compAlloc cmd coreId size
+compAllocCMD cmd@(AllocSArr        size) = do
+    (arr, size) <- compAlloc cmd sharedId size
+    shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
+    modify (arrayRefName arr `describes` shmRef)
+    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrap arr, valArg $ value size ]
+    return arr
+compAllocCMD cmd@(AllocLArr coreId size) = fst <$> compAlloc cmd coreId size
 compAllocCMD (OnHost host) = do
     s <- get
     lift $ evalGen s $ interpretT lift $ unHost host
 
 compAlloc :: (ArrayWrapper arr, CompExp exp, VarPred exp a, SmallType a)
-          => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a)
+          => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a, Length)
 compAlloc cmd coreId size = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
@@ -78,7 +84,7 @@ compAlloc cmd coreId size = do
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
-    return $ mkArrayRef name
+    return (mkArrayRef name, byteSize)
 
 
 compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
@@ -101,10 +107,14 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (WriteLArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
-compMulticoreCMD (ReadLArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
-compMulticoreCMD (WriteSArr offset spm range ram) = compCopy "e_fetch_dma" spm ram offset range
-compMulticoreCMD (ReadSArr  offset spm range ram) = compCopy "e_flush_dma" spm ram offset range
+compMulticoreCMD (WriteLArr offset spm range ram) =
+    compLocalCopy "e_write_local"  spm ram offset range
+compMulticoreCMD (ReadLArr  offset spm range ram) =
+    compLocalCopy "e_read_local"   spm ram offset range
+compMulticoreCMD (WriteSArr offset spm range ram) =
+    compSharedCopy "e_write_shared" spm ram offset range
+compMulticoreCMD (ReadSArr  offset spm range ram) =
+    compSharedCopy "e_read_shared"  spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
     compCore coreId $ unCoreComp comp
     groupAddr <- gets group
@@ -121,10 +131,10 @@ compMulticoreCMD (OnCore coreId comp) = do
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 
-compCopy :: (ArrayWrapper arr, SmallType a) => String
-         -> arr a-> Arr a
-         -> Data Index -> IndexRange -> RunGen ()
-compCopy op spm ram offset (lower, upper) = do
+compLocalCopy :: SmallType a => String
+              -> LocalArr a-> Arr a
+              -> Data Index -> IndexRange -> RunGen ()
+compLocalCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
     lift $ addInclude "<e-feldspar.h>"
@@ -133,6 +143,20 @@ compCopy op spm ram offset (lower, upper) = do
         , valArg $ value r
         , valArg $ value c
         , arrArg (unwrap spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
+
+compSharedCopy :: SmallType a => String
+               -> SharedArr a-> Arr a
+               -> Data Index -> IndexRange -> RunGen ()
+compSharedCopy op spm ram offset (lower, upper) = do
+    shmRef <- gets $ shmRefForName $ arrayRefName spm
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ shmRef
         , arrArg ram
         , valArg offset
         , valArg lower
@@ -237,6 +261,8 @@ type AddressMap = Map.Map CoreId [(LocalAddress, LocalAddress, Name)]
 type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
+type SharedMemRef = FunArg Data
+type SharedMemMap = Map.Map Name SharedMemRef
 data RGState = RGState
     { group   :: FunArg Data
     , nextId  :: Int
@@ -244,6 +270,7 @@ data RGState = RGState
     , nameMap :: NameMap
     , typeMap :: TypeMap
     , inclMap :: IncludeMap
+    , shmMap  :: SharedMemMap
     }
 type RunGen = StateT RGState Run
 
@@ -262,6 +289,7 @@ start g = RGState
     , nameMap = Map.empty
     , typeMap = Map.empty
     , inclMap = Map.empty
+    , shmMap  = Map.empty
     }
 
 sharedId :: CoreId
@@ -284,6 +312,9 @@ allocate coreId size s@RGState{..} = ((startAddr, newName), s
     baseAddr = if isShared then sharedBase else bank1Base
     size' = wordAlign size
 
+describes :: Name -> SharedMemRef -> RGState -> RGState
+describes name shmAddr s = s { shmMap = Map.insert name shmAddr (shmMap s) }
+
 hasType :: Name -> C.Type -> RGState -> RGState
 hasType name ty s = s { typeMap = Map.insert name ty (typeMap s) }
 
@@ -295,8 +326,11 @@ includes coreId incl s = s { inclMap = Map.alter merge coreId (inclMap s) }
 
 groupCoordsForName :: Name -> RGState -> CoreCoords
 groupCoordsForName name RGState{..}
-    | Just (coreId, _) <- Map.lookup name nameMap =  groupCoord coreId
+    | Just (coreId, _) <- Map.lookup name nameMap = groupCoord coreId
 
+shmRefForName :: Name -> RGState -> SharedMemRef
+shmRefForName name RGState{..}
+    | Just shmRef <- Map.lookup name shmMap = shmRef
 
 --------------------------------------------------------------------------------
 -- Hardware specific utilities
@@ -306,7 +340,6 @@ type CoreCoords = (Word32, Word32)
 
 groupCoord :: CoreId -> CoreCoords
 groupCoord coreId
-    | sharedId == coreId = (0, 0)  -- for external memory transfers coordinates are unused
     | isValidCoreId coreId = coreId `divMod` 4
     | otherwise = error $ "invalid core id: " ++ show coreId
 
