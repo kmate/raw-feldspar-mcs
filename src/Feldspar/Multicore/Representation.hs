@@ -20,13 +20,28 @@ type Size       = Word32
 type IndexRange = (Data Index, Data Index)
 
 
+newtype LocalArr  a = LocalArr  { unLocalArr  :: Arr a }
+newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
+
+class ArrayWrapper arr
+  where
+    wrap   :: Arr a -> arr a
+    unwrap :: arr a -> Arr a
+
+instance ArrayWrapper LocalArr
+  where
+    wrap   = LocalArr
+    unwrap = unLocalArr
+
+instance ArrayWrapper SharedArr
+  where
+    wrap   = SharedArr
+    unwrap = unSharedArr
+
+
 --------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
-
-newtype LocalArr a = LocalArr { unLocalArr :: Arr a }
-
-newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
 
 newtype CoreComp a = CoreComp { unCoreComp :: Comp a }
   deriving (Functor, Applicative, Monad)
@@ -43,32 +58,34 @@ instance MonadComp CoreComp
 -- Host layer
 --------------------------------------------------------------------------------
 
+data BulkArrCMD (arr :: * -> *) (prog :: * -> *) a
+  where
+    WriteArr :: SmallType a
+             => Data Index -> arr a
+             -> IndexRange -> Arr a -> BulkArrCMD arr prog ()
+    ReadArr  :: SmallType a
+             => Data Index -> arr a
+             -> IndexRange -> Arr a -> BulkArrCMD arr prog ()
+
+instance HFunctor (BulkArrCMD arr)
+  where
+    hfmap _ (WriteArr offset spm range ram) = WriteArr offset spm range ram
+    hfmap _ (ReadArr  offset spm range ram) = ReadArr  offset spm range ram
+
+
 data MulticoreCMD (prog :: * -> *) a
   where
-    WriteLArr :: SmallType a
-              => Data Index -> LocalArr a
-              -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    ReadLArr  :: SmallType a
-              => Data Index -> LocalArr a
-              -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    WriteSArr :: SmallType a
-              => Data Index -> SharedArr a
-              -> IndexRange -> Arr a -> MulticoreCMD prog ()
-    ReadSArr  :: SmallType a
-              => Data Index -> SharedArr a
-              -> IndexRange -> Arr a -> MulticoreCMD prog ()
     OnCore :: CoreId -> CoreComp () -> MulticoreCMD prog ()
 
 instance HFunctor MulticoreCMD
   where
-    hfmap _ (WriteLArr offset spm range ram) = WriteLArr offset spm range ram
-    hfmap _ (ReadLArr  offset spm range ram) = ReadLArr  offset spm range ram
-    hfmap _ (WriteSArr offset spm range ram) = WriteSArr offset spm range ram
-    hfmap _ (ReadSArr  offset spm range ram) = ReadSArr  offset spm range ram
-    hfmap _ (OnCore coreId comp)             = OnCore coreId comp
+    hfmap _ (OnCore coreId comp) = OnCore coreId comp
 
 
-type HostCMD = MulticoreCMD :+: Imp.ControlCMD Data
+type HostCMD = Imp.ControlCMD Data
+           :+: BulkArrCMD LocalArr
+           :+: BulkArrCMD SharedArr
+           :+: MulticoreCMD
 
 newtype HostT m a = Host { unHost :: ProgramT HostCMD m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
@@ -102,23 +119,20 @@ runControlCMD (Imp.While cond body) = while cond body
 instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
 
 
+runBulkArrCMD :: ArrayWrapper arr => BulkArrCMD arr Run a -> Run a
+runBulkArrCMD (WriteArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr i ram
+        setArr (i - lower + offset) item (unwrap spm)
+runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr (i - lower + offset) (unwrap spm)
+        setArr i item ram
+
+instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run where interp = runBulkArrCMD
+
+
 runMulticoreCMD :: MulticoreCMD Run a -> Run a
-runMulticoreCMD (WriteLArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr i ram
-        setArr (i - lower + offset) item (unLocalArr spm)
-runMulticoreCMD (ReadLArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower + offset) (unLocalArr spm)
-        setArr i item ram
-runMulticoreCMD (WriteSArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr i ram
-        setArr (i - lower + offset) item (unSharedArr spm)
-runMulticoreCMD (ReadSArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower + offset) (unSharedArr spm)
-        setArr i item ram
 runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ unCoreComp comp
 
 instance Interp MulticoreCMD Run where interp = runMulticoreCMD

@@ -32,20 +32,20 @@ writeArr = writeArrAt 0
 readArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
 readArr = readArrAt 0
 
-class ArrayAccess arr m
+class ArrayWrapper arr => ArrayAccess arr m
   where
     writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
     readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
 
 instance ArrayAccess LocalArr Host
   where
-    writeArrAt offset spm range = Host . singleInj . WriteLArr offset spm range
-    readArrAt offset spm range = Host . singleInj . ReadLArr offset spm range
+    writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
+    readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
 instance ArrayAccess SharedArr Host
   where
-    writeArrAt offset spm range = Host . singleInj . WriteSArr offset spm range
-    readArrAt offset spm range = Host . singleInj . ReadSArr offset spm range
+    writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
+    readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
 
 
 onCore :: CoreId -> CoreComp () -> Host ()

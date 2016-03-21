@@ -106,30 +106,13 @@ compControlCMD (Imp.While cond body) = do
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
-compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (WriteLArr offset spm range ram) =
+compLocalBulkArrCMD :: (BulkArrCMD LocalArr) RunGen a -> RunGen a
+compLocalBulkArrCMD (WriteArr offset spm range ram) =
     compLocalCopy "e_write_local"  spm ram offset range
-compMulticoreCMD (ReadLArr  offset spm range ram) =
+compLocalBulkArrCMD (ReadArr  offset spm range ram) =
     compLocalCopy "e_read_local"   spm ram offset range
-compMulticoreCMD (WriteSArr offset spm range ram) =
-    compSharedCopy "e_write_shared" spm ram offset range
-compMulticoreCMD (ReadSArr  offset spm range ram) =
-    compSharedCopy "e_read_shared"  spm ram offset range
-compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId $ unCoreComp comp
-    groupAddr <- gets group
-    let (r, c) = groupCoord coreId
-    lift $ addInclude "<e-loader.h>"
-    lift $ callProc "e_load"
-        [ strArg $ moduleName coreId ++ ".srec"
-        , groupAddr
-        , valArg $ value r
-        , valArg $ value c
-        , valArg (value 1 :: Data Int32) {- E_TRUE -}
-        ]
 
-instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
-
+instance Interp (BulkArrCMD LocalArr) RunGen where interp = compLocalBulkArrCMD
 
 compLocalCopy :: SmallType a => String
               -> LocalArr a-> Arr a
@@ -149,6 +132,15 @@ compLocalCopy op spm ram offset (lower, upper) = do
         , valArg upper
         ]
 
+
+compSharedBulkArrCMD :: (BulkArrCMD SharedArr) RunGen a -> RunGen a
+compSharedBulkArrCMD (WriteArr offset spm range ram) =
+    compSharedCopy "e_write_shared" spm ram offset range
+compSharedBulkArrCMD (ReadArr  offset spm range ram) =
+    compSharedCopy "e_read_shared"  spm ram offset range
+
+instance Interp (BulkArrCMD SharedArr) RunGen where interp = compSharedBulkArrCMD
+
 compSharedCopy :: SmallType a => String
                -> SharedArr a-> Arr a
                -> Data Index -> IndexRange -> RunGen ()
@@ -162,6 +154,23 @@ compSharedCopy op spm ram offset (lower, upper) = do
         , valArg lower
         , valArg upper
         ]
+
+
+compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
+compMulticoreCMD (OnCore coreId comp) = do
+    compCore coreId $ unCoreComp comp
+    groupAddr <- gets group
+    let (r, c) = groupCoord coreId
+    lift $ addInclude "<e-loader.h>"
+    lift $ callProc "e_load"
+        [ strArg $ moduleName coreId ++ ".srec"
+        , groupAddr
+        , valArg $ value r
+        , valArg $ value c
+        , valArg (value 1 :: Data Int32) {- E_TRUE -}
+        ]
+
+instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
@@ -227,22 +236,6 @@ getResultType :: (VarPred exp a, CompExp exp)
 getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
     in  (ty, C._includes env)
-
-
-class ArrayWrapper arr
-  where
-    wrap   :: Arr a -> arr a
-    unwrap :: arr a -> Arr a
-
-instance ArrayWrapper LocalArr
-  where
-    wrap   = LocalArr
-    unwrap = unLocalArr
-
-instance ArrayWrapper SharedArr
-  where
-    wrap   = SharedArr
-    unwrap = unSharedArr
 
 mkArrayRef :: (ArrayWrapper arr, SmallType a) => VarId -> arr a
 mkArrayRef = wrap . Arr . Actual . Imp.ArrComp
