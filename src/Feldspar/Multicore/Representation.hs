@@ -1,4 +1,3 @@
-{-# LANGUAGE UndecidableInstances #-}
 module Feldspar.Multicore.Representation where
 
 import Control.Monad.Operational.Higher
@@ -137,9 +136,6 @@ instance MonadComp Host where
     for range body  = Host $ Imp.for range (unHost . body)
     while cont body = Host $ Imp.while (unHost cont) (unHost body)
 
-
-type instance IExp HostCMD         = Data
-type instance IExp (HostCMD :+: i) = Data
 
 instance (a ~ ()) => PrintfType (Host a)
   where
