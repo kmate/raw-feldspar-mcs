@@ -68,7 +68,7 @@ compAllocCMD cmd@(AllocSArr        size) = do
     (arr, size) <- compAlloc cmd sharedId size
     shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
     modify (arrayRefName arr `describes` shmRef)
-    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrap arr, valArg $ value size ]
+    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrapArr arr, valArg $ value size ]
     return arr
 compAllocCMD cmd@(AllocLArr coreId size) = fst <$> compAlloc cmd coreId size
 compAllocCMD (OnHost host) = do
@@ -125,7 +125,7 @@ compLocalCopy op spm ram offset (lower, upper) = do
         [ groupAddr
         , valArg $ value r
         , valArg $ value c
-        , arrArg (unwrap spm)
+        , arrArg (unwrapArr spm)
         , arrArg ram
         , valArg offset
         , valArg lower
@@ -238,10 +238,10 @@ getResultType cmd =
     in  (ty, C._includes env)
 
 mkArrayRef :: (ArrayWrapper arr, SmallType a) => VarId -> arr a
-mkArrayRef = wrap . Arr . Actual . Imp.ArrComp
+mkArrayRef = wrapArr . Arr . Actual . Imp.ArrComp
 
 arrayRefName :: ArrayWrapper arr => arr a -> VarId
-arrayRefName (unwrap -> (Arr (Actual (Imp.ArrComp name)))) = name
+arrayRefName (unwrapArr -> (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------

@@ -26,18 +26,19 @@ newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
 
 class ArrayWrapper arr
   where
-    wrap   :: Arr a -> arr a
-    unwrap :: arr a -> Arr a
+    wrapArr   :: Arr a -> arr a
+    unwrapArr :: arr a -> Arr a
 
 instance ArrayWrapper LocalArr
   where
-    wrap   = LocalArr
-    unwrap = unLocalArr
+    wrapArr   = LocalArr
+    unwrapArr = unLocalArr
 
 instance ArrayWrapper SharedArr
   where
-    wrap   = SharedArr
-    unwrap = unSharedArr
+    wrapArr   = SharedArr
+    unwrapArr = unSharedArr
+
 
 --------------------------------------------------------------------------------
 -- Bulk array commands and interpretation
@@ -62,10 +63,10 @@ runBulkArrCMD :: MonadComp m => ArrayWrapper arr => BulkArrCMD arr m a -> m a
 runBulkArrCMD (WriteArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
         item :: Data a <- getArr i ram
-        setArr (i - lower + offset) item (unwrap spm)
+        setArr (i - lower + offset) item (unwrapArr spm)
 runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower + offset) (unwrap spm)
+        item :: Data a <- getArr (i - lower + offset) (unwrapArr spm)
         setArr i item ram
 
 
