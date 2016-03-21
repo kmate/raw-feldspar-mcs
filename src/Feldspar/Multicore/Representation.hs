@@ -39,9 +39,8 @@ instance ArrayWrapper SharedArr
     wrap   = SharedArr
     unwrap = unSharedArr
 
-
 --------------------------------------------------------------------------------
--- Core layer
+-- Bulk array commands and interpretation
 --------------------------------------------------------------------------------
 
 data BulkArrCMD (arr :: * -> *) (prog :: * -> *) a
@@ -58,6 +57,21 @@ instance HFunctor (BulkArrCMD arr)
     hfmap _ (WriteArr offset spm range ram) = WriteArr offset spm range ram
     hfmap _ (ReadArr  offset spm range ram) = ReadArr  offset spm range ram
 
+
+runBulkArrCMD :: MonadComp m => ArrayWrapper arr => BulkArrCMD arr m a -> m a
+runBulkArrCMD (WriteArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr i ram
+        setArr (i - lower + offset) item (unwrap spm)
+runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
+    for (lower, 1, Incl upper) $ \i -> do
+        item :: Data a <- getArr (i - lower + offset) (unwrap spm)
+        setArr i item ram
+
+
+--------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
 
 type CoreCMD = Imp.ControlCMD Data
            :+: BulkArrCMD LocalArr
@@ -86,7 +100,7 @@ runCompControlCMD (Imp.While cond body) = while cond body
 
 instance Interp (Imp.ControlCMD Data) Comp where interp = runCompControlCMD
 
-instance ArrayWrapper arr => Interp (BulkArrCMD arr) Comp where interp = undefined -- runBulkArrCMD
+instance (ArrayWrapper arr) => Interp (BulkArrCMD arr) Comp where interp = runBulkArrCMD
 
 
 --------------------------------------------------------------------------------
@@ -137,17 +151,6 @@ runControlCMD (Imp.For range body)  = for range body
 runControlCMD (Imp.While cond body) = while cond body
 
 instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
-
-
-runBulkArrCMD :: ArrayWrapper arr => BulkArrCMD arr Run a -> Run a
-runBulkArrCMD (WriteArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr i ram
-        setArr (i - lower + offset) item (unwrap spm)
-runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
-    for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower + offset) (unwrap spm)
-        setArr i item ram
 
 instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run where interp = runBulkArrCMD
 
