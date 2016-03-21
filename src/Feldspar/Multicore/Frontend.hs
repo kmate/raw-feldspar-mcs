@@ -7,8 +7,35 @@ import Feldspar.Multicore.Representation
 
 
 --------------------------------------------------------------------------------
+-- Bulk array frontend
+--------------------------------------------------------------------------------
+
+writeArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
+writeArr = writeArrAt 0
+
+readArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
+readArr = readArrAt 0
+
+class ArrayWrapper arr => ArrayAccess arr m
+  where
+    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+
+
+--------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
+
+instance ArrayAccess LocalArr CoreComp
+  where
+    writeArrAt offset spm range = CoreComp . singleInj . WriteArr offset spm range
+    readArrAt offset spm range = CoreComp . singleInj . ReadArr offset spm range
+
+instance ArrayAccess SharedArr CoreComp
+  where
+    writeArrAt offset spm range = CoreComp . singleInj . WriteArr offset spm range
+    readArrAt offset spm range = CoreComp . singleInj . ReadArr offset spm range
+
 
 local :: LocalArr a -> CoreComp (Arr a)
 local = return . unLocalArr
@@ -26,16 +53,9 @@ forever = while (return $ true)
 -- Host layer
 --------------------------------------------------------------------------------
 
-writeArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
-writeArr = writeArrAt 0
+onCore :: CoreId -> CoreComp () -> Host ()
+onCore coreId = Host . singleInj . OnCore coreId
 
-readArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
-readArr = readArrAt 0
-
-class ArrayWrapper arr => ArrayAccess arr m
-  where
-    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
-    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
 
 instance ArrayAccess LocalArr Host
   where
@@ -46,10 +66,6 @@ instance ArrayAccess SharedArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
     readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
-
-
-onCore :: CoreId -> CoreComp () -> Host ()
-onCore coreId = Host . singleInj . OnCore coreId
 
 
 --------------------------------------------------------------------------------
