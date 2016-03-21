@@ -346,10 +346,12 @@ systemCoord coreId = let (gr, gc) = groupCoord coreId in (gr + 32, gc + 8)
 type GlobalAddress = Word32
 
 toGlobal :: LocalAddress -> CoreId -> GlobalAddress
-toGlobal addr coreId =
-    let (sr, sc) = systemCoord coreId
-    -- 6 bit row number, 6 bit column number, 20 bit local address
-    in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
+toGlobal addr coreId
+    -- external memory addresses are relative to a fixed base pointer
+    | coreId == sharedId = addr
+    | otherwise = let (sr, sc) = systemCoord coreId
+                  -- 6 bit row number, 6 bit column number, 20 bit local address
+                  in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
 
 wordAlign :: LocalAddress -> LocalAddress
 wordAlign addr
