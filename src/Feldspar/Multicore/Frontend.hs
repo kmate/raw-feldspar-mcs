@@ -26,23 +26,23 @@ forever = while (return $ true)
 -- Host layer
 --------------------------------------------------------------------------------
 
-writeArr :: (ArrayAccess arr, SmallType a) => arr a -> IndexRange -> Arr a -> Host ()
+writeArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
 writeArr = writeArrAt 0
 
-readArr :: (ArrayAccess arr, SmallType a) => arr a -> IndexRange -> Arr a -> Host ()
+readArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
 readArr = readArrAt 0
 
-class ArrayAccess arr
+class ArrayAccess arr m
   where
-    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> Host ()
-    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> Host ()
+    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
 
-instance ArrayAccess LocalArr
+instance ArrayAccess LocalArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteLArr offset spm range
     readArrAt offset spm range = Host . singleInj . ReadLArr offset spm range
 
-instance ArrayAccess SharedArr
+instance ArrayAccess SharedArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteSArr offset spm range
     readArrAt offset spm range = Host . singleInj . ReadSArr offset spm range
