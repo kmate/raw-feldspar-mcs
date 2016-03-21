@@ -108,9 +108,9 @@ instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 compLocalBulkArrCMD :: (BulkArrCMD LocalArr) RunGen a -> RunGen a
 compLocalBulkArrCMD (WriteArr offset spm range ram) =
-    compLocalCopy "e_write_local"  spm ram offset range
+    compLocalCopy "host_write_local"  spm ram offset range
 compLocalBulkArrCMD (ReadArr  offset spm range ram) =
-    compLocalCopy "e_read_local"   spm ram offset range
+    compLocalCopy "host_read_local"   spm ram offset range
 
 instance Interp (BulkArrCMD LocalArr) RunGen where interp = compLocalBulkArrCMD
 
@@ -135,9 +135,9 @@ compLocalCopy op spm ram offset (lower, upper) = do
 
 compSharedBulkArrCMD :: (BulkArrCMD SharedArr) RunGen a -> RunGen a
 compSharedBulkArrCMD (WriteArr offset spm range ram) =
-    compSharedCopy "e_write_shared" spm ram offset range
+    compSharedCopy "host_write_shared" spm ram offset range
 compSharedBulkArrCMD (ReadArr  offset spm range ram) =
-    compSharedCopy "e_read_shared"  spm ram offset range
+    compSharedCopy "host_read_shared"  spm ram offset range
 
 instance Interp (BulkArrCMD SharedArr) RunGen where interp = compSharedBulkArrCMD
 
