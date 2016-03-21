@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 module Feldspar.Multicore.Representation where
 
 import Control.Monad.Operational.Higher
@@ -43,21 +44,6 @@ instance ArrayWrapper SharedArr
 -- Core layer
 --------------------------------------------------------------------------------
 
-newtype CoreComp a = CoreComp { unCoreComp :: Comp a }
-  deriving (Functor, Applicative, Monad)
-
-instance MonadComp CoreComp
-  where
-    liftComp        = CoreComp . liftComp
-    iff cond t f    = CoreComp $ iff cond (unCoreComp t) (unCoreComp f)
-    for range body  = CoreComp $ for range (unCoreComp . body)
-    while cont body = CoreComp $ while (unCoreComp cont) (unCoreComp body)
-
-
---------------------------------------------------------------------------------
--- Host layer
---------------------------------------------------------------------------------
-
 data BulkArrCMD (arr :: * -> *) (prog :: * -> *) a
   where
     WriteArr :: SmallType a
@@ -72,6 +58,40 @@ instance HFunctor (BulkArrCMD arr)
     hfmap _ (WriteArr offset spm range ram) = WriteArr offset spm range ram
     hfmap _ (ReadArr  offset spm range ram) = ReadArr  offset spm range ram
 
+
+type CoreCMD = Imp.ControlCMD Data
+           :+: BulkArrCMD LocalArr
+           :+: BulkArrCMD SharedArr
+
+newtype CoreCompT m a = CoreComp { unCoreComp :: ProgramT CoreCMD m a }
+  deriving (Functor, Applicative, Monad, MonadTrans)
+
+type CoreComp = CoreCompT Comp
+
+runCoreComp :: CoreComp a -> Comp a
+runCoreComp = interpretT id . unCoreComp
+
+
+instance MonadComp CoreComp where
+    liftComp        = lift . liftComp
+    iff cond t f    = CoreComp $ Imp.iff cond (unCoreComp t) (unCoreComp f)
+    for range body  = CoreComp $ Imp.for range (unCoreComp . body)
+    while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
+
+
+runCompControlCMD :: (Imp.ControlCMD Data) Comp a -> Comp a
+runCompControlCMD (Imp.If cond t f)     = iff cond t f
+runCompControlCMD (Imp.For range body)  = for range body
+runCompControlCMD (Imp.While cond body) = while cond body
+
+instance Interp (Imp.ControlCMD Data) Comp where interp = runCompControlCMD
+
+instance ArrayWrapper arr => Interp (BulkArrCMD arr) Comp where interp = undefined -- runBulkArrCMD
+
+
+--------------------------------------------------------------------------------
+-- Host layer
+--------------------------------------------------------------------------------
 
 data MulticoreCMD (prog :: * -> *) a
   where
@@ -133,7 +153,7 @@ instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run where interp = runBulkA
 
 
 runMulticoreCMD :: MulticoreCMD Run a -> Run a
-runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ unCoreComp comp
+runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ runCoreComp comp
 
 instance Interp MulticoreCMD Run where interp = runMulticoreCMD
 

@@ -158,7 +158,7 @@ compSharedCopy op spm ram offset (lower, upper) = do
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
 compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId $ unCoreComp comp
+    compCore coreId $ runCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
