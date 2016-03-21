@@ -56,9 +56,12 @@ g (ri, input) (ro, output) = forever $ do
     while (not <$> getLocalRef ri) $ return ()
     setLocalRef ri false
 
-    for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i -< input
-        setArr i (item * 2) -< output
+    tmp <- newArr 10
+    readArr input (0,9) tmp
+    for (0, 1, Incl 9) $ \i -> do
+        item :: Data Int32 <- getArr i tmp
+        setArr i (item * 2) tmp
+    writeArr output (0,9) tmp
     setLocalRef ro true
 
 

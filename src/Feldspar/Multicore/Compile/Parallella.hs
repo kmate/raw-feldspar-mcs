@@ -7,6 +7,7 @@ module Feldspar.Multicore.Compile.Parallella where
 import Control.Applicative
 #endif
 import Control.Monad.Operational.Higher
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bits
 import qualified Data.Map as Map
@@ -27,6 +28,9 @@ import qualified Language.Embedded.CExp as Exp
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
+
+
+import Debug.Trace
 
 
 onParallella :: (Run a -> b) -> Multicore a -> b
@@ -62,6 +66,10 @@ wrapESDK program = do
     return result
 
 
+--------------------------------------------------------------------------------
+-- Allocation layer
+--------------------------------------------------------------------------------
+
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
 compAllocCMD cmd@(AllocSArr        size) = do
@@ -87,6 +95,10 @@ compAlloc cmd coreId size = do
     return (mkArrayRef name, byteSize)
 
 
+--------------------------------------------------------------------------------
+-- Host layer
+--------------------------------------------------------------------------------
+
 compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
 compControlCMD (Imp.If cond t f)     = do
     s <- get
@@ -96,7 +108,7 @@ compControlCMD (Imp.If cond t f)     = do
 compControlCMD (Imp.For range body)  = do
     s <- get
     let body' = evalGen s . body
-    lift$ for range body'
+    lift $ for range body'
 compControlCMD (Imp.While cond body) = do
     s <- get
     let cond' = evalGen s cond
@@ -158,7 +170,11 @@ compSharedCopy op spm ram offset (lower, upper) = do
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
 compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId $ runCoreComp comp
+    s <- get
+    compCore coreId
+        $ evalCoreGen s
+        $ interpretT (lift . liftRun)
+        $ unCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -175,13 +191,15 @@ instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
 
-compCore :: CoreId -> Comp () -> RunGen ()
+compCore :: CoreId -> Run () -> RunGen ()
 compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
-    let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop $ liftRun comp
+    let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop comp
 
-    -- collect pre-allocated scratchpad arrays used by core main
-    arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
+    -- collect pre-allocated local and shared arrays used by core main
+    localDecls  <- mkLocalArrayDecls coreId   (mainUsedVars env)
+    sharedDecls <- mkSharedArrayDecls
+    let arrayDecls = localDecls ++ sharedDecls
 
     -- merge type includes and array definitions
     inclMap <- gets inclMap
@@ -204,14 +222,16 @@ mainUsedVars
     . Map.lookup "main"
     . C._funUsedVars
 
-mkArrayDecls :: CoreId -> [Name] -> RunGen [Definition]
-mkArrayDecls coreId usedVars = do
+mkLocalArrayDecls :: CoreId -> [Name] -> RunGen [Definition]
+mkLocalArrayDecls coreId usedVars = do
     nameMap <- gets nameMap
-    let arrayVars = filter (isJust . flip Map.lookup nameMap) usedVars
-    forM arrayVars $ mkArrayDecl coreId
+    let arrayVars = Set.toList $ Map.keysSet nameMap
+                 -- FIXME: collect the used vars only, see note at `mkSharedArrayDecls`
+                 -- filter (isJust . flip Map.lookup nameMap) usedVars
+    forM arrayVars $ mkLocalArrayDecl coreId
 
-mkArrayDecl :: CoreId -> Name -> RunGen Definition
-mkArrayDecl coreId name = do
+mkLocalArrayDecl :: CoreId -> Name -> RunGen Definition
+mkLocalArrayDecl coreId name = do
     typeMap <- gets typeMap
     nameMap <- gets nameMap
     let Just ty = Map.lookup name typeMap
@@ -220,7 +240,92 @@ mkArrayDecl coreId name = do
         addr'
             | coreId' == coreId = addr
             | otherwise = addr `toGlobal` coreId'
-    return $ [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
+    return $ [cedecl| $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
+
+-- FIXME: collect only used variables. It is currently impossible as touchVar
+--        is not applied on expressions in imperatice-edsl, so using an array
+--        as a function parameter does not indicate its usage.
+mkSharedArrayDecls :: RunGen [Definition]
+mkSharedArrayDecls = do
+    arrays <- fromMaybe [] . Map.lookup sharedId <$> gets addrMap
+    forM arrays mkSharedArrayDecl
+
+mkSharedArrayDecl :: (LocalAddress, LocalAddress, Name) -> RunGen Definition
+mkSharedArrayDecl (addr, _, name) =
+    return $ [cedecl| void * const $id:name = (void *)$addr; |]
+
+
+--------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+-- TODO: remove duplication, merge as much as possible with the host layer
+compCoreControlCMD :: (Imp.ControlCMD Data) CoreGen a -> CoreGen a
+compCoreControlCMD (Imp.If cond t f)     = do
+    s <- ask
+    let t' = evalCoreGen s t
+        f' = evalCoreGen s f
+    lift $ iff cond t' f'
+compCoreControlCMD (Imp.For range body)  = do
+    s <- ask
+    let body' = evalCoreGen s . body
+    lift $ for range body'
+compCoreControlCMD (Imp.While cond body) = do
+    s <- ask
+    let cond' = evalCoreGen s cond
+        body' = evalCoreGen s body
+    lift $ while cond' body'
+
+instance Interp (Imp.ControlCMD Data) CoreGen where interp = compCoreControlCMD
+
+
+compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) CoreGen a -> CoreGen a
+compCoreLocalBulkArrCMD (WriteArr offset spm range ram) =
+    compCoreLocalCopy "core_write_local"  spm ram offset range
+compCoreLocalBulkArrCMD (ReadArr  offset spm range ram) =
+    compCoreLocalCopy "core_read_local"   spm ram offset range
+
+instance Interp (BulkArrCMD LocalArr) CoreGen where interp = compCoreLocalBulkArrCMD
+
+compCoreLocalCopy :: SmallType a => String
+                  -> LocalArr a-> Arr a
+                  -> Data Index -> IndexRange -> CoreGen ()
+compCoreLocalCopy op spm ram offset (lower, upper) = do
+    groupAddr <- asks group
+    (r, c) <- asks $ groupCoordsForName (arrayRefName spm)
+    lift $ addInclude "<string.h>"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ arrArg (unwrapArr spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
+
+
+compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) CoreGen a -> CoreGen a
+compCoreSharedBulkArrCMD (WriteArr offset spm range ram) =
+    compCoreSharedCopy "core_write_shared" spm ram offset range
+compCoreSharedBulkArrCMD (ReadArr  offset spm range ram) =
+    compCoreSharedCopy "core_read_shared"  spm ram offset range
+
+instance Interp (BulkArrCMD SharedArr) CoreGen where interp = compCoreSharedBulkArrCMD
+
+compCoreSharedCopy :: SmallType a => String
+                   -> SharedArr a-> Arr a
+                   -> Data Index -> IndexRange -> CoreGen ()
+compCoreSharedCopy op spm ram offset (lower, upper) = do
+    shmRef <- asks $ shmRefForName $ arrayRefName spm
+    lift $ addInclude "<e-lib.h>"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ arrArg (unwrapArr spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
 
 
 --------------------------------------------------------------------------------
@@ -245,7 +350,7 @@ arrayRefName (unwrapArr -> (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
--- Compiler state and utilities
+-- Host compiler state and utilities
 --------------------------------------------------------------------------------
 
 type Name = String
@@ -266,7 +371,6 @@ data RGState = RGState
     , shmMap  :: SharedMemMap
     }
 type RunGen = StateT RGState Run
-
 
 runGen :: RGState -> RunGen a -> Run (a, RGState)
 runGen = flip runStateT
@@ -324,6 +428,16 @@ groupCoordsForName name RGState{..}
 shmRefForName :: Name -> RGState -> SharedMemRef
 shmRefForName name RGState{..}
     | Just shmRef <- Map.lookup name shmMap = shmRef
+
+--------------------------------------------------------------------------------
+-- Core compiler representation and utilities
+--------------------------------------------------------------------------------
+
+type CoreGen = ReaderT RGState Run
+
+evalCoreGen :: RGState -> CoreGen a -> Run a
+evalCoreGen = flip runReaderT
+
 
 --------------------------------------------------------------------------------
 -- Hardware specific utilities
