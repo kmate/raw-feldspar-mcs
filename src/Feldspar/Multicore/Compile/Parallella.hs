@@ -197,9 +197,7 @@ compCore coreId comp = do
     let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop comp
 
     -- collect pre-allocated local and shared arrays used by core main
-    localDecls  <- mkLocalArrayDecls coreId   (mainUsedVars env)
-    sharedDecls <- mkSharedArrayDecls
-    let arrayDecls = localDecls ++ sharedDecls
+    arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
 
     -- merge type includes and array definitions
     inclMap <- gets inclMap
@@ -222,16 +220,14 @@ mainUsedVars
     . Map.lookup "main"
     . C._funUsedVars
 
-mkLocalArrayDecls :: CoreId -> [Name] -> RunGen [Definition]
-mkLocalArrayDecls coreId usedVars = do
+mkArrayDecls :: CoreId -> [Name] -> RunGen [Definition]
+mkArrayDecls coreId usedVars = do
     nameMap <- gets nameMap
-    let arrayVars = Set.toList $ Map.keysSet nameMap
-                 -- FIXME: collect the used vars only, see note at `mkSharedArrayDecls`
-                 -- filter (isJust . flip Map.lookup nameMap) usedVars
-    forM arrayVars $ mkLocalArrayDecl coreId
+    let arrayVars = filter (isJust . flip Map.lookup nameMap) usedVars
+    forM arrayVars $ mkArrayDecl coreId
 
-mkLocalArrayDecl :: CoreId -> Name -> RunGen Definition
-mkLocalArrayDecl coreId name = do
+mkArrayDecl :: CoreId -> Name -> RunGen Definition
+mkArrayDecl coreId name = do
     typeMap <- gets typeMap
     nameMap <- gets nameMap
     let Just ty = Map.lookup name typeMap
@@ -240,19 +236,9 @@ mkLocalArrayDecl coreId name = do
         addr'
             | coreId' == coreId = addr
             | otherwise = addr `toGlobal` coreId'
-    return $ [cedecl| $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
-
--- FIXME: collect only used variables. It is currently impossible as touchVar
---        is not applied on expressions in imperatice-edsl, so using an array
---        as a function parameter does not indicate its usage.
-mkSharedArrayDecls :: RunGen [Definition]
-mkSharedArrayDecls = do
-    arrays <- fromMaybe [] . Map.lookup sharedId <$> gets addrMap
-    forM arrays mkSharedArrayDecl
-
-mkSharedArrayDecl :: (LocalAddress, LocalAddress, Name) -> RunGen Definition
-mkSharedArrayDecl (addr, _, name) =
-    return $ [cedecl| void * const $id:name = (void *)$addr; |]
+    return $ if coreId' == sharedId
+       then [cedecl| void * const $id:name = (void *)$addr; |]
+       else [cedecl| $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
 
 
 --------------------------------------------------------------------------------
