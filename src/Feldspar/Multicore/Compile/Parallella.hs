@@ -375,9 +375,6 @@ start g = RGState
     , shmMap  = Map.empty
     }
 
-sharedId :: CoreId
-sharedId = maxBound  -- use the maximum representable value for shared addresses
-
 allocate :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
 allocate coreId size s@RGState{..} = ((startAddr, newName), s
     { nextId  = nextId + 1

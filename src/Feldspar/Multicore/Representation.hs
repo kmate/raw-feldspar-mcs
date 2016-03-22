@@ -20,6 +20,10 @@ type Size       = Word32
 type IndexRange = (Data Index, Data Index)
 
 
+sharedId :: CoreId
+sharedId = maxBound  -- use the maximum representable value for shared addresses
+
+
 newtype LocalArr  a = LocalArr  { unLocalArr  :: Arr a }
 newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
 
