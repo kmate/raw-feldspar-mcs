@@ -81,7 +81,7 @@ compAllocCMD cmd@(AllocSArr        size) = do
 compAllocCMD cmd@(AllocLArr coreId size) = fst <$> compAlloc cmd coreId size
 compAllocCMD (OnHost host) = do
     s <- get
-    lift $ evalGen s $ interpretT lift $ unHost host
+    lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
 
 compAlloc :: (ArrayWrapper arr, CompExp exp, VarPred exp a, SmallType a)
           => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a, Length)
@@ -99,21 +99,27 @@ compAlloc cmd coreId size = do
 -- Host layer
 --------------------------------------------------------------------------------
 
-compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
+class Monad m => ControlGen m
+  where
+    evalGen  :: RGState -> m a -> Run a
+    genState :: m RGState
+    fromRun  :: Run a -> m a
+
+compControlCMD :: ControlGen m => (Imp.ControlCMD Data) m a -> m a
 compControlCMD (Imp.If cond t f)     = do
-    s <- get
+    s <- genState
     let t' = evalGen s t
         f' = evalGen s f
-    lift $ iff cond t' f'
+    fromRun $ iff cond t' f'
 compControlCMD (Imp.For range body)  = do
-    s <- get
+    s <- genState
     let body' = evalGen s . body
-    lift $ for range body'
+    fromRun $ for range body'
 compControlCMD (Imp.While cond body) = do
-    s <- get
+    s <- genState
     let cond' = evalGen s cond
         body' = evalGen s body
-    lift $ while cond' body'
+    fromRun $ while cond' body'
 
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
@@ -170,10 +176,10 @@ compSharedCopy op spm ram offset (lower, upper) = do
 
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
 compMulticoreCMD (OnCore coreId comp) = do
-    s <- get
+    s <- genState
     compCore coreId
-        $ evalCoreGen s
-        $ interpretT (lift . liftRun)
+        $ evalGen s
+        $ interpretT ((lift :: Run a -> CoreGen a) . liftRun)
         $ unCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
@@ -245,24 +251,7 @@ mkArrayDecl coreId name = do
 -- Core layer
 --------------------------------------------------------------------------------
 
--- TODO: remove duplication, merge as much as possible with the host layer
-compCoreControlCMD :: (Imp.ControlCMD Data) CoreGen a -> CoreGen a
-compCoreControlCMD (Imp.If cond t f)     = do
-    s <- ask
-    let t' = evalCoreGen s t
-        f' = evalCoreGen s f
-    lift $ iff cond t' f'
-compCoreControlCMD (Imp.For range body)  = do
-    s <- ask
-    let body' = evalCoreGen s . body
-    lift $ for range body'
-compCoreControlCMD (Imp.While cond body) = do
-    s <- ask
-    let cond' = evalCoreGen s cond
-        body' = evalCoreGen s body
-    lift $ while cond' body'
-
-instance Interp (Imp.ControlCMD Data) CoreGen where interp = compCoreControlCMD
+instance Interp (Imp.ControlCMD Data) CoreGen where interp = compControlCMD
 
 
 compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) CoreGen a -> CoreGen a
@@ -361,8 +350,11 @@ type RunGen = StateT RGState Run
 runGen :: RGState -> RunGen a -> Run (a, RGState)
 runGen = flip runStateT
 
-evalGen :: RGState -> RunGen a -> Run a
-evalGen = flip evalStateT
+instance ControlGen RunGen
+  where
+    evalGen  = flip evalStateT
+    genState = get
+    fromRun  = lift
 
 start :: FunArg Data -> RGState
 start g = RGState
@@ -418,8 +410,11 @@ shmRefForName name RGState{..}
 
 type CoreGen = ReaderT RGState Run
 
-evalCoreGen :: RGState -> CoreGen a -> Run a
-evalCoreGen = flip runReaderT
+instance ControlGen CoreGen
+  where
+    evalGen  = flip runReaderT
+    genState = ask
+    fromRun  = lift
 
 
 --------------------------------------------------------------------------------
