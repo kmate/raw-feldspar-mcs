@@ -97,12 +97,12 @@ instance MonadComp CoreComp where
     while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
 
 
-runCompControlCMD :: (Imp.ControlCMD Data) Comp a -> Comp a
-runCompControlCMD (Imp.If cond t f)     = iff cond t f
-runCompControlCMD (Imp.For range body)  = for range body
-runCompControlCMD (Imp.While cond body) = while cond body
+runControlCMD :: MonadComp m => (Imp.ControlCMD Data) m a -> m a
+runControlCMD (Imp.If cond t f)     = iff cond t f
+runControlCMD (Imp.For range body)  = for range body
+runControlCMD (Imp.While cond body) = while cond body
 
-instance Interp (Imp.ControlCMD Data) Comp where interp = runCompControlCMD
+instance Interp (Imp.ControlCMD Data) Comp where interp = runControlCMD
 
 instance (ArrayWrapper arr) => Interp (BulkArrCMD arr) Comp where interp = runBulkArrCMD
 
@@ -145,11 +145,6 @@ instance (a ~ ()) => PrintfType (Host a)
   where
     fprf h form = lift . Run . singleE . Imp.FPrintf h form . reverse
 
-
-runControlCMD :: (Imp.ControlCMD Data) Run a -> Run a
-runControlCMD (Imp.If cond t f)     = iff cond t f
-runControlCMD (Imp.For range body)  = for range body
-runControlCMD (Imp.While cond body) = while cond body
 
 instance Interp (Imp.ControlCMD Data) Run where interp = runControlCMD
 
