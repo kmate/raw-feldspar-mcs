@@ -17,9 +17,9 @@ shared = do
     f2 <- allocRef 2
     b2 <- allocSArr n
     onHost $ do
-        writeRef f0 false
-        writeRef f1 false
-        writeRef f2 false
+        setLocalRef f0 false
+        setLocalRef f1 false
+        setLocalRef f2 false
         onCore 0 (f (f0, b0) (f1, b1))
         onCore 1 (g (f1, b1) (f2, b2))
 
@@ -30,10 +30,10 @@ shared = do
                 setArr i item input
 
             writeArr b0 (0, value $ n - 1) input
-            writeRef f0 true
+            setLocalRef f0 true
             output <- newArr $ value n
-            while (not <$> readRef f2) $ return ()
-            writeRef f2 false
+            while (not <$> getLocalRef f2) $ return ()
+            setLocalRef f2 false
             readArr b2 (0, value $ n - 1) output
 
             for (0, 1, Excl $ value n) $ \i -> do

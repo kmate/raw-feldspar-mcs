@@ -27,8 +27,8 @@ allocPipe coreId size = do
 
 initPipe :: SmallType a => Pipe a -> Host ()
 initPipe (Pipe rptr wptr _ _) = do
-    writeRef rptr 0
-    writeRef wptr 0
+    setLocalRef rptr 0
+    setLocalRef wptr 0
 
 
 pullPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
@@ -39,15 +39,15 @@ pullPipe (Pipe rptr wptr elems size) (lower, upper) dst = do
     while ((<total) <$> getRef read) $ do
         -- wait for items in the buffer
         while (do
-            rx <- readRef rptr
-            wx <- readRef wptr
+            rx <- getLocalRef rptr
+            wx <- getLocalRef wptr
             return $ rx == wx) $ return ()
         -- calculate items left
         done <- getRef read
         let left = total - done
         -- how many items could it read in this round
-        rx <- readRef rptr
-        wx <- readRef wptr
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptr
         let available = (size + wx -rx) `rem` size
         let toRead = min left available
             start = lower + done
@@ -57,7 +57,7 @@ pullPipe (Pipe rptr wptr elems size) (lower, upper) dst = do
                 readArrAt rx elems (start, start + toEnd - 1) dst
                 let start' = start + toEnd
                 readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
-        writeRef rptr ((rx + toRead) `rem` size)
+        setLocalRef rptr ((rx + toRead) `rem` size)
         setRef read (done + toRead)
 
 pushPipe :: SmallType a => Pipe a -> IndexRange -> Arr a -> Host ()
@@ -68,15 +68,15 @@ pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
     while ((<total) <$> getRef written) $ do
         -- wait for empty space in the buffer
         while (do
-            rx <- readRef rptr
-            wx <- readRef wptr
+            rx <- getLocalRef rptr
+            wx <- getLocalRef wptr
             return $ (wx + 1) `rem` size == rx) $ return ()
         -- calculate items left
         done <- getRef written
         let left = total - done
         -- how many items could be writen in this round
-        rx <- readRef rptr
-        wx <- readRef wptr
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptr
         let available = ((size + wx - rx) `rem` size)
             empty = size - available - 1  -- one slot is reserved in this setup
             toWrite = min left empty
@@ -87,7 +87,7 @@ pushPipe (Pipe rptr wptr elems size) (lower, upper) src = do
                 writeArrAt wx elems (start, start + toEnd - 1) src
                 let start' = start + toEnd
                 writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
-        writeRef wptr ((wx + toWrite) `rem` size)
+        setLocalRef wptr ((wx + toWrite) `rem` size)
         setRef written (done + toWrite)
 
 

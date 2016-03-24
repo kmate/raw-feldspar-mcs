@@ -12,21 +12,19 @@ allocRef :: SmallType a => CoreId -> Multicore (LocalRef a)
 allocRef coreId = LocalRef <$> allocLArr coreId 1
 
 
-readRef :: SmallType a => LocalRef a -> Host (Data a)
-readRef (LocalRef arr) = do
-    tmp <- newArr 1
-    readArr arr (0,0) tmp
-    getArr 0 tmp
+class (MonadComp m, ArrayAccess LocalArr m) => LocalRefAccess m
+  where
+    getLocalRef :: SmallType a => LocalRef a -> m (Data a)
+    getLocalRef (LocalRef arr) = do
+        tmp <- newArr 1
+        readArr arr (0,0) tmp
+        getArr 0 tmp
 
-writeRef :: SmallType a => LocalRef a -> Data a -> Host ()
-writeRef (LocalRef arr) value = do
-    tmp <- newArr 1
-    setArr 0 value tmp
-    writeArr arr (0,0) tmp
+    setLocalRef :: SmallType a => LocalRef a -> Data a -> m ()
+    setLocalRef (LocalRef arr) value = do
+        tmp <- newArr 1
+        setArr 0 value tmp
+        writeArr arr (0,0) tmp
 
-
-getLocalRef :: SmallType a => LocalRef a -> CoreComp (Data a)
-getLocalRef = getArr 0 <=< local . unLocalRef
-
-setLocalRef :: SmallType a => LocalRef a-> Data a -> CoreComp ()
-setLocalRef (LocalRef arr) value = setArr 0 value -< arr
+instance LocalRefAccess Host
+instance LocalRefAccess CoreComp
