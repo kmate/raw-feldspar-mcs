@@ -15,16 +15,23 @@ allocRef coreId = LocalRef <$> allocLArr coreId 1
 class (MonadComp m, ArrayAccess LocalArr m) => LocalRefAccess m
   where
     getLocalRef :: SmallType a => LocalRef a -> m (Data a)
+    setLocalRef :: SmallType a => LocalRef a -> Data a -> m ()
+
+
+instance LocalRefAccess Host
+  where
     getLocalRef (LocalRef arr) = do
         tmp <- newArr 1
         readArr arr (0,0) tmp
         getArr 0 tmp
 
-    setLocalRef :: SmallType a => LocalRef a -> Data a -> m ()
     setLocalRef (LocalRef arr) value = do
         tmp <- newArr 1
         setArr 0 value tmp
         writeArr arr (0,0) tmp
 
-instance LocalRefAccess Host
+
 instance LocalRefAccess CoreComp
+  where
+    getLocalRef (LocalRef arr) = getArr 0 -< arr
+    setLocalRef (LocalRef arr) value = setArr 0 value -< arr
