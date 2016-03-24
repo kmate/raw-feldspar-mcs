@@ -7,9 +7,9 @@ import Feldspar.Multicore
 
 pipes :: Size -> Size -> Multicore ()
 pipes ioChunkSize bufferSize = do
-    p0 <- allocPipe 0 bufferSize
-    p1 <- allocPipe 1 bufferSize
-    p2 <- allocPipe 2 bufferSize
+    p0 <- allocHostPipe 0 bufferSize
+    p1 <- allocCorePipe 0 1 bufferSize
+    p2 <- allocHostPipe 1 bufferSize
     onHost $ do
         initPipe p0
         initPipe p1
@@ -32,12 +32,12 @@ pipes ioChunkSize bufferSize = do
                 printf "> %d\n" item
 
 
-f :: Pipe Int32 -> Pipe Int32 -> CoreComp ()
+f :: HostToCorePipe Int32 -> CorePipe Int32 -> CoreComp ()
 f input output = forever $ do
     elem <- readPipe input
     writePipe (elem + 1) output
 
-g :: Pipe Int32 -> Pipe Int32 -> CoreComp ()
+g :: CorePipe Int32 -> CoreToHostPipe Int32 -> CoreComp ()
 g input output = forever $ do
     elem <- readPipe input
     writePipe (elem * 2) output
