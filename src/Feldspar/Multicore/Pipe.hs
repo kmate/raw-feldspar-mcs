@@ -41,11 +41,29 @@ class MonadComp m => PipeWriter p m
 
 class MonadComp m => BulkPipeReader p m
   where
+    pullPipeA :: SmallType a => p a -> IndexRange -> Arr a -> m (Data Index)
     pullPipe  :: SmallType a => p a -> IndexRange -> Arr a -> m ()
+    pullPipe pipe (lower, upper) dst = do
+        let total = upper - lower + 1
+        read <- initRef (value 0 :: Data Length)
+        -- until all data is read
+        while ((<total) <$> getRef read) $ do
+            done <- getRef read
+            toRead <- pullPipeA pipe (lower + done, upper) dst
+            setRef read (done + toRead)
 
 class MonadComp m => BulkPipeWriter p m
   where
-    pushPipe   :: SmallType a => p a -> IndexRange -> Arr a -> m ()
+    pushPipeA :: SmallType a => p a -> IndexRange -> Arr a -> m (Data Index)
+    pushPipe  :: SmallType a => p a -> IndexRange -> Arr a -> m ()
+    pushPipe pipe (lower, upper) src = do
+        let total = upper - lower + 1
+        written <- initRef (value 0 :: Data Length)
+        -- until all data is written
+        while ((<total) <$> getRef written) $ do
+            done <- getRef written
+            toWrite <- pushPipeA pipe (lower + done, upper) src
+            setRef written (done + toWrite)
 
 
 --------------------------------------------------------------------------------
@@ -82,67 +100,57 @@ instance PipeInit (HostPipe dir)
 
 
 pullHostPipe (HostPipe rptr wptr elems size) (lower, upper) dst = do
-    let total = upper - lower + 1
-    read <- initRef (value 0 :: Data Length)
-    -- until all data is read
-    while ((<total) <$> getRef read) $ do
-        -- wait for items in the buffer
-        while (do
-            rx <- getLocalRef rptr
-            wx <- getLocalRef wptr
-            return $ rx == wx) $ return ()
-        -- calculate items left
-        done <- getRef read
-        let left = total - done
-        -- how many items could it read in this round
+    -- wait for items in the buffer
+    while (do
         rx <- getLocalRef rptr
         wx <- getLocalRef wptr
-        let available = (size + wx -rx) `rem` size
-        let toRead = min left available
-            start = lower + done
-        iff (rx + toRead <= size)
-            (readArrAt rx elems (start, start + toRead - 1) dst)
-            (do let toEnd = size - rx
-                readArrAt rx elems (start, start + toEnd - 1) dst
-                let start' = start + toEnd
-                readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
-        setLocalRef rptr ((rx + toRead) `rem` size)
-        setRef read (done + toRead)
+        return $ rx == wx) $ return ()
+    -- calculate items left
+    let left = upper - lower + 1
+    -- how many items could it read in this round
+    rx <- getLocalRef rptr
+    wx <- getLocalRef wptr
+    let available = (size + wx -rx) `rem` size
+    let toRead = min left available
+        start = lower
+    iff (rx + toRead <= size)
+        (readArrAt rx elems (start, start + toRead - 1) dst)
+        (do let toEnd = size - rx
+            readArrAt rx elems (start, start + toEnd - 1) dst
+            let start' = start + toEnd
+            readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
+    setLocalRef rptr ((rx + toRead) `rem` size)
+    return toRead
 
 pushHostPipe (HostPipe rptr wptr elems size) (lower, upper) src = do
-    let total = upper - lower + 1
-    written <- initRef (value 0 :: Data Length)
-    -- until all data is written
-    while ((<total) <$> getRef written) $ do
-        -- wait for empty space in the buffer
-        while (do
-            rx <- getLocalRef rptr
-            wx <- getLocalRef wptr
-            return $ (wx + 1) `rem` size == rx) $ return ()
-        -- calculate items left
-        done <- getRef written
-        let left = total - done
-        -- how many items could be writen in this round
+    -- wait for empty space in the buffer
+    while (do
         rx <- getLocalRef rptr
         wx <- getLocalRef wptr
-        let available = ((size + wx - rx) `rem` size)
-            empty = size - available - 1  -- one slot is reserved in this setup
-            toWrite = min left empty
-            start = lower + done
-        iff (wx + toWrite <= size)
-            (writeArrAt wx elems (start, start + toWrite - 1) src)
-            (do let toEnd = size - wx
-                writeArrAt wx elems (start, start + toEnd - 1) src
-                let start' = start + toEnd
-                writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
-        setLocalRef wptr ((wx + toWrite) `rem` size)
-        setRef written (done + toWrite)
+        return $ (wx + 1) `rem` size == rx) $ return ()
+    -- calculate items left
+    let left = upper - lower + 1
+    -- how many items could be writen in this round
+    rx <- getLocalRef rptr
+    wx <- getLocalRef wptr
+    let available = ((size + wx - rx) `rem` size)
+        empty = size - available - 1  -- one slot is reserved in this setup
+        toWrite = min left empty
+        start = lower
+    iff (wx + toWrite <= size)
+        (writeArrAt wx elems (start, start + toWrite - 1) src)
+        (do let toEnd = size - wx
+            writeArrAt wx elems (start, start + toEnd - 1) src
+            let start' = start + toEnd
+            writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
+    setLocalRef wptr ((wx + toWrite) `rem` size)
+    return toWrite
 
-instance BulkPipeReader (HostPipe ToHost)   Host where pullPipe = pullHostPipe
-instance BulkPipeWriter (HostPipe FromHost) Host where pushPipe = pushHostPipe
+instance BulkPipeReader (HostPipe ToHost)   Host where pullPipeA = pullHostPipe
+instance BulkPipeWriter (HostPipe FromHost) Host where pushPipeA = pushHostPipe
 
-instance BulkPipeReader (HostPipe FromHost) CoreComp where pullPipe = pullHostPipe
-instance BulkPipeWriter (HostPipe ToHost)   CoreComp where pushPipe = pushHostPipe
+instance BulkPipeReader (HostPipe FromHost) CoreComp where pullPipeA = pullHostPipe
+instance BulkPipeWriter (HostPipe ToHost)   CoreComp where pushPipeA = pushHostPipe
 
 
 -- FIXME: there should be a way to merge this with CorePipe
@@ -246,65 +254,55 @@ instance PipeWriter CorePipe CoreComp
 
 instance BulkPipeReader CorePipe CoreComp
   where
-    pullPipe (CorePipe rptr wptr rptrS wptrS elems size) (lower, upper) dst = do
-        let total = upper - lower + 1
-        read <- initRef (value 0 :: Data Length)
-        -- until all data is read
-        while ((<total) <$> getRef read) $ do
-            -- wait for items in the buffer
-            while (do
-                rx <- getLocalRef rptr
-                wx <- getLocalRef wptrS -- read local shadow copy of write pointer
-                return $ rx == wx) $ return ()
-            -- calculate items left
-            done <- getRef read
-            let left = total - done
-            -- how many items could it read in this round
+    pullPipeA (CorePipe rptr wptr rptrS wptrS elems size) (lower, upper) dst = do
+        -- wait for items in the buffer
+        while (do
             rx <- getLocalRef rptr
             wx <- getLocalRef wptrS -- read local shadow copy of write pointer
-            let available = (size + wx -rx) `rem` size
-            let toRead = min left available
-                start = lower + done
-            iff (rx + toRead <= size)
-                (readArrAt rx elems (start, start + toRead - 1) dst)
-                (do let toEnd = size - rx
-                    readArrAt rx elems (start, start + toEnd - 1) dst
-                    let start' = start + toEnd
-                    readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
-            let rx' = (rx + toRead) `rem` size
-            setLocalRef rptr  rx'
-            setLocalRef rptrS rx' -- write remote shadow copy of read pointer
-            setRef read (done + toRead)
+            return $ rx == wx) $ return ()
+        -- calculate items left
+        let left = upper - lower + 1
+        -- how many items could it read in this round
+        rx <- getLocalRef rptr
+        wx <- getLocalRef wptrS -- read local shadow copy of write pointer
+        let available = (size + wx -rx) `rem` size
+        let toRead = min left available
+            start = lower
+        iff (rx + toRead <= size)
+            (readArrAt rx elems (start, start + toRead - 1) dst)
+            (do let toEnd = size - rx
+                readArrAt rx elems (start, start + toEnd - 1) dst
+                let start' = start + toEnd
+                readArrAt 0 elems (start', start' + toRead - (size - rx) - 1) dst)
+        let rx' = (rx + toRead) `rem` size
+        setLocalRef rptr  rx'
+        setLocalRef rptrS rx' -- write remote shadow copy of read pointer
+        return toRead
 
 instance BulkPipeWriter CorePipe CoreComp
   where
-      pushPipe (CorePipe rptr wptr rptrS wptrS elems size) (lower, upper) src = do
-        let total = upper - lower + 1
-        written <- initRef (value 0 :: Data Length)
-        -- until all data is written
-        while ((<total) <$> getRef written) $ do
-            -- wait for empty space in the buffer
-            while (do
-                rx <- getLocalRef rptrS -- read local shadow copy of read pointer
-                wx <- getLocalRef wptr
-                return $ (wx + 1) `rem` size == rx) $ return ()
-            -- calculate items left
-            done <- getRef written
-            let left = total - done
-            -- how many items could be writen in this round
+      pushPipeA (CorePipe rptr wptr rptrS wptrS elems size) (lower, upper) src = do
+        -- wait for empty space in the buffer
+        while (do
             rx <- getLocalRef rptrS -- read local shadow copy of read pointer
             wx <- getLocalRef wptr
-            let available = ((size + wx - rx) `rem` size)
-                empty = size - available - 1  -- one slot is reserved in this setup
-                toWrite = min left empty
-                start = lower + done
-            iff (wx + toWrite <= size)
-                (writeArrAt wx elems (start, start + toWrite - 1) src)
-                (do let toEnd = size - wx
-                    writeArrAt wx elems (start, start + toEnd - 1) src
-                    let start' = start + toEnd
-                    writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
-            let wx' = (wx + toWrite) `rem` size
-            setLocalRef wptr  wx'
-            setLocalRef wptrS wx' -- write remote shadow copy of write pointer
-            setRef written (done + toWrite)
+            return $ (wx + 1) `rem` size == rx) $ return ()
+        -- calculate items left
+        let left = upper - lower + 1
+        -- how many items could be writen in this round
+        rx <- getLocalRef rptrS -- read local shadow copy of read pointer
+        wx <- getLocalRef wptr
+        let available = ((size + wx - rx) `rem` size)
+            empty = size - available - 1  -- one slot is reserved in this setup
+            toWrite = min left empty
+            start = lower
+        iff (wx + toWrite <= size)
+            (writeArrAt wx elems (start, start + toWrite - 1) src)
+            (do let toEnd = size - wx
+                writeArrAt wx elems (start, start + toEnd - 1) src
+                let start' = start + toEnd
+                writeArrAt 0 elems (start', start' + (toWrite - toEnd) - 1) src)
+        let wx' = (wx + toWrite) `rem` size
+        setLocalRef wptr  wx'
+        setLocalRef wptrS wx' -- write remote shadow copy of write pointer
+        return toWrite
