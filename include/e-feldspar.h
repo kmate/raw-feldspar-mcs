@@ -9,7 +9,6 @@
 #define host_read_local(g, r, c, src, dst, offset, lower, upper) \
     e_read(g, r, c, (src) + (offset) * sizeof(*dst), (dst) + (lower), ((upper) - (lower) + 1) * sizeof(*dst))
 
-
 // host operations on shared external memory
 
 #define host_write_shared(dst, src, offset, lower, upper) \
@@ -21,10 +20,10 @@
 // core operations on core local memories
 
 #define core_write_local(dst, src, offset, lower, upper) \
-    memcpy((dst) + (offset) * sizeof(*src), (src) + (lower), ((upper) - (lower) + 1) * sizeof(*src))
+    memcpy((dst) + (offset), (src) + (lower), ((upper) - (lower) + 1) * sizeof(*src))
 
 #define core_read_local(src, dst, offset, lower, upper) \
-    memcpy((dst) + (lower), (src) + (offset) * sizeof(*dst), ((upper) - (lower) + 1) * sizeof(*dst))
+    memcpy((dst) + (lower), (src) + (offset), ((upper) - (lower) + 1) * sizeof(*dst))
 
 // core operations on shared external memory
 
