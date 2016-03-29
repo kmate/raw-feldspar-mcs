@@ -9,5 +9,5 @@ main = do
         withFile ("results_" ++ m ++ ".dat") WriteMode $ \w -> do
             ls <- lines <$> hGetContents r
             forM_ ls $ \l -> do
-                hPutStrLn w $ show (2 * (read l + 1))
+                hPutStrLn w $ "> " ++ show (2 * (read l + 1))
 
