@@ -7,6 +7,7 @@ module Feldspar.Multicore.Compile.Parallella where
 import Control.Applicative
 #endif
 import Control.Monad.Operational.Higher
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Bits
 import qualified Data.Map as Map
@@ -27,6 +28,9 @@ import qualified Language.Embedded.CExp as Exp
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
+
+
+import Debug.Trace
 
 
 onParallella :: (Run a -> b) -> Multicore a -> b
@@ -53,51 +57,130 @@ wrapESDK program = do
                       , valArg (value 4 :: Data Int32)
                       , valArg (value 4 :: Data Int32) ]
     callProc "e_reset_group" [ groupAddr ]
-    result <- runGen (start groupAddr) program
+    (result, state) <- runGen (start groupAddr) program
+    let sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId (inclMap state))
+    mapM_ addInclude sharedTypeIncludes
+    mapM_ (callProc "e_free" . return . snd) (Map.toList $ shmMap state)
     callProc "e_close" [ groupAddr ]
     callProc "e_finalize" []
     return result
 
 
+--------------------------------------------------------------------------------
+-- Allocation layer
+--------------------------------------------------------------------------------
+
 -- TODO: allocate only the arrays that are really used?
 compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(AllocArr coreId size) = do
+compAllocCMD cmd@(AllocSArr        size) = do
+    (arr, size) <- compAlloc cmd sharedId size
+    shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
+    modify (arrayRefName arr `describes` shmRef)
+    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrapArr arr, valArg $ value size ]
+    return arr
+compAllocCMD cmd@(AllocLArr coreId size) = fst <$> compAlloc cmd coreId size
+compAllocCMD (OnHost host) = do
+    s <- get
+    lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
+
+compAlloc :: (ArrayWrapper arr, CompExp exp, VarPred exp a, SmallType a)
+          => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a, Length)
+compAlloc cmd coreId size = do
     let (ty, incl) = getResultType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
-    return $ mkArrayRef name
-compAllocCMD (OnHost host) = do
-    s <- get
-    lift $ runGen s $ interpretT lift $ unHost host
+    return (mkArrayRef name, byteSize)
 
 
-compControlCMD :: (Imp.ControlCMD Data) RunGen a -> RunGen a
+--------------------------------------------------------------------------------
+-- Host layer
+--------------------------------------------------------------------------------
+
+class Monad m => ControlGen m
+  where
+    evalGen  :: RGState -> m a -> Run a
+    genState :: m RGState
+    fromRun  :: Run a -> m a
+
+compControlCMD :: ControlGen m => (Imp.ControlCMD Data) m a -> m a
 compControlCMD (Imp.If cond t f)     = do
-    s <- get
-    let t' = runGen s t
-        f' = runGen s f
-    lift $ iff cond t' f'
+    s <- genState
+    let t' = evalGen s t
+        f' = evalGen s f
+    fromRun $ iff cond t' f'
 compControlCMD (Imp.For range body)  = do
-    s <- get
-    let body' = runGen s . body
-    lift$ for range body'
+    s <- genState
+    let body' = evalGen s . body
+    fromRun $ for range body'
 compControlCMD (Imp.While cond body) = do
-    s <- get
-    let cond' = runGen s cond
-        body' = runGen s body
-    lift $ while cond' body'
+    s <- genState
+    let cond' = evalGen s cond
+        body' = evalGen s body
+    fromRun $ while cond' body'
 
 instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
 
 
+compLocalBulkArrCMD :: (BulkArrCMD LocalArr) RunGen a -> RunGen a
+compLocalBulkArrCMD (WriteArr offset spm range ram) =
+    compLocalCopy "host_write_local"  spm ram offset range
+compLocalBulkArrCMD (ReadArr  offset spm range ram) =
+    compLocalCopy "host_read_local"   spm ram offset range
+
+instance Interp (BulkArrCMD LocalArr) RunGen where interp = compLocalBulkArrCMD
+
+compLocalCopy :: SmallType a => String
+              -> LocalArr a-> Arr a
+              -> Data Index -> IndexRange -> RunGen ()
+compLocalCopy op spm ram offset (lower, upper) = do
+    groupAddr <- gets group
+    (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ groupAddr
+        , valArg $ value r
+        , valArg $ value c
+        , arrArg (unwrapArr spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
+
+
+compSharedBulkArrCMD :: (BulkArrCMD SharedArr) RunGen a -> RunGen a
+compSharedBulkArrCMD (WriteArr offset spm range ram) =
+    compSharedCopy "host_write_shared" spm ram offset range
+compSharedBulkArrCMD (ReadArr  offset spm range ram) =
+    compSharedCopy "host_read_shared"  spm ram offset range
+
+instance Interp (BulkArrCMD SharedArr) RunGen where interp = compSharedBulkArrCMD
+
+compSharedCopy :: SmallType a => String
+               -> SharedArr a-> Arr a
+               -> Data Index -> IndexRange -> RunGen ()
+compSharedCopy op spm ram offset (lower, upper) = do
+    shmRef <- gets $ shmRefForName $ arrayRefName spm
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ shmRef
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
+
+
 compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
-compMulticoreCMD (WriteArr offset spm range ram) = compCopy "e_fetch" spm ram offset range
-compMulticoreCMD (ReadArr  offset spm range ram) = compCopy "e_flush" spm ram offset range
 compMulticoreCMD (OnCore coreId comp) = do
-    compCore coreId $ unCoreComp comp
+    s <- genState
+    compCore coreId
+        $ evalGen s
+        $ interpretT ((lift :: Run a -> CoreGen a) . liftRun)
+        $ unCoreComp comp
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -111,40 +194,24 @@ compMulticoreCMD (OnCore coreId comp) = do
 
 instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
 
-
-compCopy :: SmallType a => String
-         -> LocalArr a-> Arr a
-         -> Data Index -> IndexRange -> RunGen ()
-compCopy op spm ram offset (lower, upper) = do
-    groupAddr <- gets group
-    (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
-    lift $ addInclude "<e-feldspar.h>"
-    lift $ callProc op
-        [ groupAddr
-        , valArg $ value r
-        , valArg $ value c
-        , arrArg (unLocalArr spm)
-        , arrArg ram
-        , valArg offset
-        , valArg lower
-        , valArg upper
-        ]
-
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
 
-compCore :: CoreId -> Comp () -> RunGen ()
+compCore :: CoreId -> Run () -> RunGen ()
 compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
-    let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop $ liftRun comp
+    let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop comp
 
-    -- collect pre-allocated scratchpad arrays used by core main
+    -- collect pre-allocated local and shared arrays used by core main
     arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
 
     -- merge type includes and array definitions
     inclMap <- gets inclMap
-    let typeIncludes = fromMaybe Set.empty (Map.lookup coreId inclMap)
-        env' = env { C._includes = C._includes env `Set.union` typeIncludes
+    let coreTypeIncludes   = fromMaybe Set.empty (Map.lookup coreId   inclMap)
+        sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId inclMap)
+        env' = env { C._includes = C._includes env
+                         `Set.union` coreTypeIncludes
+                         `Set.union` sharedTypeIncludes
                    -- cenvToCUnit will reverse the order of definitions
                    , C._globals  = C._globals env ++ reverse arrayDecls }
 
@@ -175,7 +242,65 @@ mkArrayDecl coreId name = do
         addr'
             | coreId' == coreId = addr
             | otherwise = addr `toGlobal` coreId'
-    return $ [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
+    return $ if coreId' == sharedId
+       then [cedecl| void * const $id:name = (void *)$addr; |]
+       else [cedecl| $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
+
+
+--------------------------------------------------------------------------------
+-- Core layer
+--------------------------------------------------------------------------------
+
+instance Interp (Imp.ControlCMD Data) CoreGen where interp = compControlCMD
+
+
+compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) CoreGen a -> CoreGen a
+compCoreLocalBulkArrCMD (WriteArr offset spm range ram) =
+    compCoreLocalCopy "core_write_local"  spm ram offset range
+compCoreLocalBulkArrCMD (ReadArr  offset spm range ram) =
+    compCoreLocalCopy "core_read_local"   spm ram offset range
+
+instance Interp (BulkArrCMD LocalArr) CoreGen where interp = compCoreLocalBulkArrCMD
+
+compCoreLocalCopy :: SmallType a => String
+                  -> LocalArr a-> Arr a
+                  -> Data Index -> IndexRange -> CoreGen ()
+compCoreLocalCopy op spm ram offset (lower, upper) = do
+    groupAddr <- asks group
+    (r, c) <- asks $ groupCoordsForName (arrayRefName spm)
+    lift $ addInclude "<string.h>"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ arrArg (unwrapArr spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
+
+
+compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) CoreGen a -> CoreGen a
+compCoreSharedBulkArrCMD (WriteArr offset spm range ram) =
+    compCoreSharedCopy "core_write_shared" spm ram offset range
+compCoreSharedBulkArrCMD (ReadArr  offset spm range ram) =
+    compCoreSharedCopy "core_read_shared"  spm ram offset range
+
+instance Interp (BulkArrCMD SharedArr) CoreGen where interp = compCoreSharedBulkArrCMD
+
+compCoreSharedCopy :: SmallType a => String
+                   -> SharedArr a-> Arr a
+                   -> Data Index -> IndexRange -> CoreGen ()
+compCoreSharedCopy op spm ram offset (lower, upper) = do
+    shmRef <- asks $ shmRefForName $ arrayRefName spm
+    lift $ addInclude "<e-lib.h>"
+    lift $ addInclude "<e-feldspar.h>"
+    lift $ callProc op
+        [ arrArg (unwrapArr spm)
+        , arrArg ram
+        , valArg offset
+        , valArg lower
+        , valArg upper
+        ]
 
 
 --------------------------------------------------------------------------------
@@ -192,15 +317,15 @@ getResultType cmd =
     let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
     in  (ty, C._includes env)
 
-mkArrayRef :: SmallType a => VarId -> LocalArr a
-mkArrayRef name = LocalArr $ Arr $ Actual $ Imp.ArrComp name
+mkArrayRef :: (ArrayWrapper arr, SmallType a) => VarId -> arr a
+mkArrayRef = wrapArr . Arr . Actual . Imp.ArrComp
 
-arrayRefName :: LocalArr a -> VarId
-arrayRefName (LocalArr (Arr (Actual (Imp.ArrComp name)))) = name
+arrayRefName :: ArrayWrapper arr => arr a -> VarId
+arrayRefName (unwrapArr -> (Arr (Actual (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
--- Compiler state and utilities
+-- Host compiler state and utilities
 --------------------------------------------------------------------------------
 
 type Name = String
@@ -209,6 +334,8 @@ type AddressMap = Map.Map CoreId [(LocalAddress, LocalAddress, Name)]
 type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
+type SharedMemRef = FunArg Data
+type SharedMemMap = Map.Map Name SharedMemRef
 data RGState = RGState
     { group   :: FunArg Data
     , nextId  :: Int
@@ -216,12 +343,18 @@ data RGState = RGState
     , nameMap :: NameMap
     , typeMap :: TypeMap
     , inclMap :: IncludeMap
+    , shmMap  :: SharedMemMap
     }
 type RunGen = StateT RGState Run
 
+runGen :: RGState -> RunGen a -> Run (a, RGState)
+runGen = flip runStateT
 
-runGen :: RGState -> RunGen a -> Run a
-runGen = flip evalStateT
+instance ControlGen RunGen
+  where
+    evalGen  = flip evalStateT
+    genState = get
+    fromRun  = lift
 
 start :: FunArg Data -> RGState
 start g = RGState
@@ -231,22 +364,28 @@ start g = RGState
     , nameMap = Map.empty
     , typeMap = Map.empty
     , inclMap = Map.empty
+    , shmMap  = Map.empty
     }
 
 allocate :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
 allocate coreId size s@RGState{..} = ((startAddr, newName), s
-    { nextId = nextId + 1
+    { nextId  = nextId + 1
     , addrMap = newAddrMap
     , nameMap = Map.insert newName (coreId, startAddr) nameMap
     })
   where
-    newName = "spm" ++ show nextId
+    isShared = sharedId == coreId
+    newName  = (if isShared then "sa" else "la") ++ show nextId
     (startAddr, _, _) = newEntry
     newEntry | Just (entry:_) <- Map.lookup coreId newAddrMap = entry
     newAddrMap = Map.alter (Just . addAddr) coreId addrMap
     addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
-    addAddr _ = [(bank2Base, bank2Base + size', newName)]
+    addAddr _ = [(baseAddr, baseAddr + size', newName)]
+    baseAddr = if isShared then sharedBase else bank1Base
     size' = wordAlign size
+
+describes :: Name -> SharedMemRef -> RGState -> RGState
+describes name shmAddr s = s { shmMap = Map.insert name shmAddr (shmMap s) }
 
 hasType :: Name -> C.Type -> RGState -> RGState
 hasType name ty s = s { typeMap = Map.insert name ty (typeMap s) }
@@ -259,7 +398,23 @@ includes coreId incl s = s { inclMap = Map.alter merge coreId (inclMap s) }
 
 groupCoordsForName :: Name -> RGState -> CoreCoords
 groupCoordsForName name RGState{..}
-    | Just (coreId, _) <- Map.lookup name nameMap =  groupCoord coreId
+    | Just (coreId, _) <- Map.lookup name nameMap = groupCoord coreId
+
+shmRefForName :: Name -> RGState -> SharedMemRef
+shmRefForName name RGState{..}
+    | Just shmRef <- Map.lookup name shmMap = shmRef
+
+--------------------------------------------------------------------------------
+-- Core compiler representation and utilities
+--------------------------------------------------------------------------------
+
+type CoreGen = ReaderT RGState Run
+
+instance ControlGen CoreGen
+  where
+    evalGen  = flip runReaderT
+    genState = ask
+    fromRun  = lift
 
 
 --------------------------------------------------------------------------------
@@ -283,10 +438,12 @@ systemCoord coreId = let (gr, gc) = groupCoord coreId in (gr + 32, gc + 8)
 type GlobalAddress = Word32
 
 toGlobal :: LocalAddress -> CoreId -> GlobalAddress
-toGlobal addr coreId =
-    let (sr, sc) = systemCoord coreId
-    -- 6 bit row number, 6 bit column number, 20 bit local address
-    in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
+toGlobal addr coreId
+    -- external memory addresses are relative to a fixed base pointer
+    | coreId == sharedId = addr
+    | otherwise = let (sr, sc) = systemCoord coreId
+                  -- 6 bit row number, 6 bit column number, 20 bit local address
+                  in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
 
 wordAlign :: LocalAddress -> LocalAddress
 wordAlign addr
@@ -294,8 +451,11 @@ wordAlign addr
     | otherwise = addr - m + 4
     where m = addr `mod` 4
 
-bank2Base :: LocalAddress
-bank2Base = 0x2000
+bank1Base :: LocalAddress  -- local in the address space of a core
+bank1Base = 0x2000
+
+sharedBase :: LocalAddress  -- relative to external memory base
+sharedBase = 0x1000000
 
 
 sizeOf :: C.Type -> Size
