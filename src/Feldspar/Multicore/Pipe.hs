@@ -1,4 +1,12 @@
-module Feldspar.Multicore.Pipe where
+module Feldspar.Multicore.Pipe
+  ( HostToCorePipe, CorePipe, CoreToHostPipe
+  , allocHostPipe, allocCorePipe
+  , Pipe, initPipe
+  , PipeReader, readPipeA, readPipe
+  , PipeWriter, writePipeA, writePipe
+  , BulkPipeReader, pullPipeA, pullPipe
+  , BulkPipeWriter, pushPipeA, pushPipe
+  ) where
 
 import qualified Prelude
 import Control.Monad.Trans
@@ -18,6 +26,9 @@ class (Pipe p, LocalRefAccess m) => PipeReader p m
   where
     getElement :: SmallType a => p a -> Data Index -> m (Data a)
 
+-- | Asynchronously reads an element from a pipe.
+--   Immediately gives None, when the pipe is emty.
+--   Otherwise it returns the element read.
 readPipeA :: (Pipe p, PipeReader p m, SmallType a)
           => p a -> OptionT m (Data a)
 readPipeA pipe = do
@@ -31,6 +42,7 @@ readPipeA pipe = do
         setReadPtr pipe ((rx + 1) `rem` size)
         return elem
 
+-- | Synchronously reads an element from a pipe. Blocks until an element found.
 readPipe  :: (Pipe p, PipeReader p m, SmallType a)
           => p a -> m (Data a)
 readPipe pipe = do
@@ -47,6 +59,9 @@ class (Pipe p, LocalRefAccess m) => PipeWriter p m
   where
     setElement :: SmallType a => p a -> Data Index -> Data a -> m ()
 
+-- | Asynchronously writes an element into a pipe.
+--   Immediately returns False, when the pipe is full.
+--   Otherwise it returns True after the element is written into the pipe.
 writePipeA :: (Pipe p, PipeWriter p m, SmallType a)
            => Data a -> p a -> m (Data Bool)
 writePipeA elem pipe = do
@@ -64,6 +79,7 @@ writePipeA elem pipe = do
             setRef done true)
     getRef done
 
+-- | Synchronously writes an element into a pipe. Blocks until the write succeeds.
 writePipe  :: (Pipe p, PipeWriter p m, SmallType a) => Data a -> p a -> m ()
 writePipe elem pipe = while (not <$> writePipeA elem pipe) $ return ()
 
@@ -72,6 +88,8 @@ class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
   where
     getElements :: SmallType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
+-- | Asynchronously reads multiple elements from a pipe.
+--   Immediately returns the number of elements read.
 pullPipeA :: (Pipe p, BulkPipeReader p m, SmallType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pullPipeA pipe  (lower, upper) dst = do
@@ -98,6 +116,8 @@ pullPipeA pipe  (lower, upper) dst = do
     setReadPtr pipe ((rx + toRead) `rem` size)
     return toRead
 
+-- | Synchronously reads multple elements from a pipe.
+--   Blocks until all the elements in the given range are read.
 pullPipe  :: (Pipe p, BulkPipeReader p m, SmallType a)
           => p a -> IndexRange -> Arr a -> m ()
 pullPipe pipe (lower, upper) dst = do
@@ -114,6 +134,8 @@ class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
   where
     setElements :: SmallType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
+-- | Asynchronously writes multiple elements into a pipe.
+--   Immediately returns the number of elements written.
 pushPipeA :: (Pipe p, BulkPipeWriter p m, SmallType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pushPipeA pipe (lower, upper) src = do
@@ -141,6 +163,8 @@ pushPipeA pipe (lower, upper) src = do
     setWritePtr pipe ((wx + toWrite) `rem` size)
     return toWrite
 
+-- | Synchronously writes multiple elements into a pipe.
+--   Blcoks untipl all the elements in the given range are written.
 pushPipe  :: (Pipe p, BulkPipeWriter p m, SmallType a)
           => p a -> IndexRange -> Arr a -> m ()
 pushPipe pipe (lower, upper) src = do
