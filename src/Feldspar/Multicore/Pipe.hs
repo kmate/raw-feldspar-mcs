@@ -128,6 +128,13 @@ pullPipe pipe (lower, upper) dst = do
         done <- getRef read
         toRead <- pullPipeA pipe (lower + done, upper) dst
         setRef read (done + toRead)
+    -- reset pointers for performance if needed
+    rx <- getCReadPtr  pipe
+    wx <- getCWritePtr pipe
+    iff (rx == wx && wx == getSize pipe - 1)
+        (do setReadPtr  pipe 0
+            setWritePtr pipe 0)
+        (return ())
 
 
 class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
