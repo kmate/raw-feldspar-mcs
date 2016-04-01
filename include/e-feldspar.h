@@ -19,11 +19,46 @@
 
 // core operations on core local memories
 
+// TODO: fall back to fast_memcpy when dma requirements fail
 #define core_write_local(dst, src, offset, lower, upper) \
-    memcpy((dst) + (offset), (src) + (lower), ((upper) - (lower) + 1) * sizeof(*src))
+    e_dma_copy((dst) + (offset), (src) + (lower), ((upper) - (lower) + 1) * sizeof(*src))
 
 #define core_read_local(src, dst, offset, lower, upper) \
-    memcpy((dst) + (lower), (src) + (offset), ((upper) - (lower) + 1) * sizeof(*dst))
+    fast_memcpy((dst) + (lower), (src) + (offset), ((upper) - (lower) + 1) * sizeof(*dst))
+
+#include <stdint.h>
+#include <stdlib.h>
+
+// based on the epiphany-ebsp library
+void fast_memcpy(void *dst, const void *src, size_t bytes) {
+    unsigned bits = (unsigned) dst | (unsigned) src;
+    if (0 == bits & 0x7) { // align 8
+        int count = bytes >> 3;
+        bytes &= 0x7;
+        uint64_t *dst8 = (uint64_t *) dst;
+        const uint64_t *src8 = (const uint64_t *) src;
+        while (count--) {
+            *dst8++ = *src8++;
+        }
+        dst = (void *) dst8;
+        src = (const void *) src8;
+    } else if (0 == bits & 0x3) { // align 4
+        int count = bytes >> 2;
+        bytes &= 0x3;
+        uint32_t *dst4 = (uint32_t *) dst;
+        const uint32_t *src4 = (const uint32_t *) src;
+        while (count--) {
+            *dst4++ = *src4++;
+        }
+        dst = (void *) dst4;
+        src = (const void *) src4;
+    }
+    uint8_t *dst1 = (uint8_t *) dst;
+    const uint8_t *src1 = (const uint8_t *) src;
+    while (bytes--) {
+        *dst1++ = *src1++;
+    }
+}
 
 // core operations on shared external memory
 
