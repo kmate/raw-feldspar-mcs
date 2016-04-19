@@ -8,14 +8,14 @@ import Feldspar.Multicore.Representation
 newtype LocalRef a = LocalRef { unLocalRef :: LocalArr a }
 
 
-allocRef :: SmallType a => CoreId -> Multicore (LocalRef a)
+allocRef :: PrimType a => CoreId -> Multicore (LocalRef a)
 allocRef coreId = LocalRef <$> allocLArr coreId 1
 
 
 class (MonadComp m, ArrayAccess LocalArr m) => LocalRefAccess m
   where
-    getLocalRef :: SmallType a => LocalRef a -> m (Data a)
-    setLocalRef :: SmallType a => LocalRef a -> Data a -> m ()
+    getLocalRef :: PrimType a => LocalRef a -> m (Data a)
+    setLocalRef :: PrimType a => LocalRef a -> Data a -> m ()
 
 
 instance LocalRefAccess Host
