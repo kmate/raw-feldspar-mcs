@@ -202,8 +202,6 @@ instance HFunctor AllocCMD
 
 
 newtype Multicore a = Multicore
--- FIXME: pred shoud be PrimType' here to have compType in compiler
--- but arrays require PrimType everywhere (newArr, arrArg, etc...)
     { unMulticore :: Program AllocCMD (Param2 Prim PrimType) a }
   deriving (Functor, Applicative, Monad)
 

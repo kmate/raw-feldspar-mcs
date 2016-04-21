@@ -42,7 +42,7 @@ f = mapBulk (+1)
 g :: Size -> CorePipe Int32 -> CoreToHostPipe Int32 -> CoreComp ()
 g = mapBulk (*2)
 
-mapBulk :: (SmallType a, BulkPipeReader ip CoreComp, BulkPipeWriter op CoreComp)
+mapBulk :: (PrimType a, BulkPipeReader ip CoreComp, BulkPipeWriter op CoreComp)
         => (Data a -> Data a) -> Size -> ip a -> op a -> CoreComp ()
 mapBulk f bulkSize input output = forever $ do
     tmp <- newArr $ value bulkSize

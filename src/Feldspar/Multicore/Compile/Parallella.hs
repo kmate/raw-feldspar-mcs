@@ -17,6 +17,7 @@ import Feldspar.Primitive.Representation
 import Feldspar.Representation
 import Feldspar.Run hiding ((==))
 import Feldspar.Run.Compile
+import Feldspar.Run.Representation
 
 import qualified Language.C.Monad as C
 import qualified Language.C.Quote as C
@@ -33,7 +34,7 @@ onParallella :: (Run a -> b) -> Multicore a -> b
 onParallella action
     = action
     . wrapESDK
-    . error "FIXME: interpret"
+    . interpret
     . unMulticore
 
 
@@ -68,7 +69,7 @@ wrapESDK program = do
 --------------------------------------------------------------------------------
 
 -- TODO: allocate only the arrays that are really used?
-compAllocCMD :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
+compAllocCMD :: (CompExp Prim, CompTypeClass PrimType)
              => AllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
 compAllocCMD cmd@(AllocSArr size) = do
     (arr, size) <- compAlloc cmd sharedId size
@@ -87,7 +88,7 @@ compAlloc :: (ArrayWrapper arr, CompExp Prim, CompTypeClass PrimType, PrimType a
           -> Size
           -> RunGen (arr a, Length)
 compAlloc cmd coreId size = do
-    let (ty, incl) = getResultType cmd
+    let (ty, incl) = getArrElemType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
@@ -95,9 +96,20 @@ compAlloc cmd coreId size = do
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return (mkArrayRef name, byteSize)
 
--- FIXME: enable instance
--- instance Interp AllocCMD RunGen (Param2 Prim PrimType)
---   where interp = compAllocCMD
+getArrElemType :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
+           => AllocCMD (Param3 RunGen Prim PrimType) (proxy a)
+           -> (C.Type, Set.Set String)
+getArrElemType cmd =
+    let (ty, env) = cGen $ compType (proxyPred cmd) (proxyArg cmd)
+    in  (ty, C._includes env)
+
+instance CompTypeClass PrimType
+  where
+    compType _ = compType (Proxy :: Proxy PrimType')
+    compLit _  = compLit (Proxy :: Proxy PrimType')
+
+instance Interp AllocCMD RunGen (Param2 Prim PrimType)
+  where interp = compAllocCMD
 
 
 --------------------------------------------------------------------------------
@@ -110,7 +122,9 @@ class Monad m => ControlGen m
     genState :: m RGState
     fromRun  :: Run a -> m a
 
-compControlCMD :: ControlGen m => Imp.ControlCMD (Param3 m Data pred) a -> m a
+compControlCMD :: ControlGen m
+               => Imp.ControlCMD (Param3 m Data PrimType') a
+               -> m a
 compControlCMD (Imp.If cond t f)     = do
     s <- genState
     let t' = evalGen s t
@@ -119,14 +133,14 @@ compControlCMD (Imp.If cond t f)     = do
 compControlCMD (Imp.For range body)  = do
     s <- genState
     let body' = evalGen s . body
-    fromRun $ error "FIXME: for range body"
+    fromRun $ Run $ singleInj $ Imp.For range (unRun . body')
 compControlCMD (Imp.While cond body) = do
     s <- genState
     let cond' = evalGen s cond
         body' = evalGen s body
     fromRun $ while cond' body'
 
-instance Interp Imp.ControlCMD RunGen (Param2 Data pred)
+instance Interp Imp.ControlCMD RunGen (Param2 Data PrimType')
   where interp = compControlCMD
 
 
@@ -260,7 +274,7 @@ mkArrayDecl coreId name = do
 -- Core layer
 --------------------------------------------------------------------------------
 
-instance Interp Imp.ControlCMD CoreGen (Param2 Data pred)
+instance Interp Imp.ControlCMD CoreGen (Param2 Data PrimType')
   where interp = compControlCMD
 
 
@@ -321,13 +335,6 @@ compCoreSharedCopy op spm ram offset (lower, upper) = do
 
 cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
-
-getResultType :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
-              => AllocCMD (Param3 RunGen Prim PrimType) (proxy a)
-              -> (C.Type, Set.Set String)
-getResultType cmd =
-    let (ty, env) = cGen $ compType (proxyPred cmd) (proxyArg cmd)
-    in  (ty, C._includes env)
 
 mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> arr a
 mkArrayRef = wrapArr . Arr . Single . Imp.ArrComp
