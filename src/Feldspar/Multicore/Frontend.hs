@@ -10,16 +10,16 @@ import Feldspar.Multicore.Representation
 -- Bulk array frontend
 --------------------------------------------------------------------------------
 
-writeArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
+writeArr :: (ArrayAccess arr m, PrimType a) => arr a -> IndexRange -> Arr a -> m ()
 writeArr = writeArrAt 0
 
-readArr :: (ArrayAccess arr m, SmallType a) => arr a -> IndexRange -> Arr a -> m ()
+readArr :: (ArrayAccess arr m, PrimType a) => arr a -> IndexRange -> Arr a -> m ()
 readArr = readArrAt 0
 
 class ArrayWrapper arr => ArrayAccess arr m
   where
-    writeArrAt :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
-    readArrAt  :: SmallType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+    writeArrAt :: PrimType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+    readArrAt  :: PrimType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
 
 
 --------------------------------------------------------------------------------
@@ -72,11 +72,11 @@ instance ArrayAccess SharedArr Host
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-allocLArr :: SmallType a => CoreId -> Size -> Multicore (LocalArr a)
-allocLArr coreId = Multicore . singleE . AllocLArr coreId
+allocLArr :: PrimType a => CoreId -> Size -> Multicore (LocalArr a)
+allocLArr coreId = Multicore . singleInj . AllocLArr coreId
 
-allocSArr :: SmallType a => Size -> Multicore (SharedArr a)
-allocSArr = Multicore . singleE . AllocSArr
+allocSArr :: PrimType a => Size -> Multicore (SharedArr a)
+allocSArr = Multicore . singleInj . AllocSArr
 
 onHost :: Host a -> Multicore a
-onHost = Multicore . singleE . OnHost
+onHost = Multicore . singleInj . OnHost

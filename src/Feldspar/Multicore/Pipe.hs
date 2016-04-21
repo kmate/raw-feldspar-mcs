@@ -24,12 +24,12 @@ import Feldspar.Option
 
 class (Pipe p, LocalRefAccess m) => PipeReader p m
   where
-    getElement :: SmallType a => p a -> Data Index -> m (Data a)
+    getElement :: PrimType a => p a -> Data Index -> m (Data a)
 
 -- | Asynchronously reads an element from a pipe.
 --   Immediately gives None, when the pipe is emty.
 --   Otherwise it returns the element read.
-readPipeA :: (Pipe p, PipeReader p m, SmallType a)
+readPipeA :: (Pipe p, PipeReader p m, PrimType a)
           => p a -> OptionT m (Data a)
 readPipeA pipe = do
     let size = getSize pipe
@@ -43,7 +43,7 @@ readPipeA pipe = do
         return elem
 
 -- | Synchronously reads an element from a pipe. Blocks until an element found.
-readPipe  :: (Pipe p, PipeReader p m, SmallType a)
+readPipe  :: (Pipe p, PipeReader p m, PrimType a)
           => p a -> m (Data a)
 readPipe pipe = do
         value <- newRef
@@ -57,12 +57,12 @@ readPipe pipe = do
 
 class (Pipe p, LocalRefAccess m) => PipeWriter p m
   where
-    setElement :: SmallType a => p a -> Data Index -> Data a -> m ()
+    setElement :: PrimType a => p a -> Data Index -> Data a -> m ()
 
 -- | Asynchronously writes an element into a pipe.
 --   Immediately returns False, when the pipe is full.
 --   Otherwise it returns True after the element is written into the pipe.
-writePipeA :: (Pipe p, PipeWriter p m, SmallType a)
+writePipeA :: (Pipe p, PipeWriter p m, PrimType a)
            => Data a -> p a -> m (Data Bool)
 writePipeA elem pipe = do
     let size = getSize pipe
@@ -80,17 +80,17 @@ writePipeA elem pipe = do
     getRef done
 
 -- | Synchronously writes an element into a pipe. Blocks until the write succeeds.
-writePipe  :: (Pipe p, PipeWriter p m, SmallType a) => Data a -> p a -> m ()
+writePipe  :: (Pipe p, PipeWriter p m, PrimType a) => Data a -> p a -> m ()
 writePipe elem pipe = while (not <$> writePipeA elem pipe) $ return ()
 
 
 class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
   where
-    getElements :: SmallType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
+    getElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously reads multiple elements from a pipe.
 --   Immediately returns the number of elements read.
-pullPipeA :: (Pipe p, BulkPipeReader p m, SmallType a)
+pullPipeA :: (Pipe p, BulkPipeReader p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pullPipeA pipe  (lower, upper) dst = do
     -- wait for items in the buffer
@@ -118,7 +118,7 @@ pullPipeA pipe  (lower, upper) dst = do
 
 -- | Synchronously reads multple elements from a pipe.
 --   Blocks until all the elements in the given range are read.
-pullPipe  :: (Pipe p, BulkPipeReader p m, SmallType a)
+pullPipe  :: (Pipe p, BulkPipeReader p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m ()
 pullPipe pipe (lower, upper) dst = do
     let total = upper - lower + 1
@@ -139,11 +139,11 @@ pullPipe pipe (lower, upper) dst = do
 
 class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
   where
-    setElements :: SmallType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
+    setElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously writes multiple elements into a pipe.
 --   Immediately returns the number of elements written.
-pushPipeA :: (Pipe p, BulkPipeWriter p m, SmallType a)
+pushPipeA :: (Pipe p, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pushPipeA pipe (lower, upper) src = do
     let size = getSize pipe
@@ -172,7 +172,7 @@ pushPipeA pipe (lower, upper) src = do
 
 -- | Synchronously writes multiple elements into a pipe.
 --   Blcoks untipl all the elements in the given range are written.
-pushPipe  :: (Pipe p, BulkPipeWriter p m, SmallType a)
+pushPipe  :: (Pipe p, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m ()
 pushPipe pipe (lower, upper) src = do
     let total = upper - lower + 1
@@ -232,7 +232,7 @@ instance Pipe (HostPipe dir)
     getSize      (HostPipe _ _ _ size) = size
 
 
-allocHostPipe :: SmallType a => CoreId -> Size -> Multicore (HostPipe dir a)
+allocHostPipe :: PrimType a => CoreId -> Size -> Multicore (HostPipe dir a)
 allocHostPipe coreId size = do
     rptr  <- allocRef coreId
     wptr  <- allocRef coreId
@@ -307,7 +307,7 @@ instance Pipe CorePipe
     getSize (CorePipe _ _ _ _ _ size) = size
 
 
-allocCorePipe :: SmallType a => CoreId -> CoreId -> Size -> Multicore (CorePipe a)
+allocCorePipe :: PrimType a => CoreId -> CoreId -> Size -> Multicore (CorePipe a)
 allocCorePipe writer reader size = do
     rptr  <- allocRef reader
     wptr  <- allocRef writer

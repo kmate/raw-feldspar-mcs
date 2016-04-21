@@ -48,14 +48,14 @@ generalPipes ioChunkSize bufferSize = do
                 printf "> %d\n" item
 
 
-fork :: (SmallType a, PipeReader ip CoreComp, PipeWriter op1 CoreComp, PipeWriter op2 CoreComp)
+fork :: (PrimType a, PipeReader ip CoreComp, PipeWriter op1 CoreComp, PipeWriter op2 CoreComp)
      => ip a -> op1 a -> op2 a -> CoreComp ()
 fork input out1 out2 = forever $ do
     elem <- readPipe input
     writePipe elem out1
     writePipe elem out2
 
-merge :: (SmallType a, PipeReader ip1 CoreComp, PipeReader ip2 CoreComp, PipeWriter op CoreComp)
+merge :: (PrimType a, PipeReader ip1 CoreComp, PipeReader ip2 CoreComp, PipeWriter op CoreComp)
       => ip1 a -> ip2 a -> (Data a -> Data a -> Data a) -> op a -> CoreComp ()
 merge in1 in2 op output = forever $ do
     elem1 <- readPipe in1
@@ -63,13 +63,13 @@ merge in1 in2 op output = forever $ do
     writePipe (elem1 `op` elem2) output
 
 
-inc :: (SmallType a, Num a, PipeReader ip CoreComp, PipeWriter op CoreComp)
+inc :: (PrimType a, Num a, PipeReader ip CoreComp, PipeWriter op CoreComp)
     => ip a -> op a -> CoreComp ()
 inc input output = forever $ do
     elem <- readPipe input
     writePipe (elem + 1) output
 
-twice :: (SmallType a, Num a, PipeReader ip CoreComp, PipeWriter op CoreComp)
+twice :: (PrimType a, Num a, PipeReader ip CoreComp, PipeWriter op CoreComp)
       => ip a -> op a -> CoreComp ()
 twice input output = forever $ do
     elem <- readPipe input

@@ -28,7 +28,7 @@ library
   default-language: Haskell2010
 
   default-extensions:
---    ConstraintKinds
+    ConstraintKinds
     DeriveFunctor
     FlexibleContexts
     FlexibleInstances

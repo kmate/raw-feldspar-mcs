@@ -1,11 +1,7 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Feldspar.Multicore.Compile.Parallella where
 
-#if __GLASGOW_HASKELL__ < 710
-import Control.Applicative
-#endif
 import Control.Monad.Operational.Higher
 import Control.Monad.Reader
 import Control.Monad.State
@@ -14,31 +10,33 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Proxy
 import qualified Data.Set as Set
-import Data.VirtualContainer
+import Data.TypedStruct
 
 import Feldspar.Multicore.Representation
+import Feldspar.Primitive.Representation
 import Feldspar.Representation
 import Feldspar.Run hiding ((==))
 import Feldspar.Run.Compile
+import Feldspar.Run.Representation
 
 import qualified Language.C.Monad as C
 import qualified Language.C.Quote as C
 import qualified Language.C.Syntax as C
-import qualified Language.Embedded.CExp as Exp
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-import Debug.Trace
-
+icompileAll :: MonadRun m => m a -> IO ()
+icompileAll  = mapM_ (\(n, m) -> putStrLn ("// module " ++ n) >> putStrLn m) . compileAll
 
 onParallella :: (Run a -> b) -> Multicore a -> b
 onParallella action
     = action
     . wrapESDK
-    . interpretWithMonad compAllocCMD
+    . interpret
     . unMulticore
+
 
 --------------------------------------------------------------------------------
 -- Transformation over Run
@@ -71,8 +69,9 @@ wrapESDK program = do
 --------------------------------------------------------------------------------
 
 -- TODO: allocate only the arrays that are really used?
-compAllocCMD :: CompExp exp => (AllocCMD exp) RunGen a -> RunGen a
-compAllocCMD cmd@(AllocSArr        size) = do
+compAllocCMD :: (CompExp Prim, CompTypeClass PrimType)
+             => AllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
+compAllocCMD cmd@(AllocSArr size) = do
     (arr, size) <- compAlloc cmd sharedId size
     shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
     modify (arrayRefName arr `describes` shmRef)
@@ -83,16 +82,34 @@ compAllocCMD (OnHost host) = do
     s <- get
     lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
 
-compAlloc :: (ArrayWrapper arr, CompExp exp, VarPred exp a, SmallType a)
-          => (AllocCMD exp) RunGen (arr a) -> CoreId -> Size -> RunGen (arr a, Length)
+compAlloc :: (ArrayWrapper arr, CompExp Prim, CompTypeClass PrimType, PrimType a)
+          => AllocCMD (Param3 RunGen Prim PrimType) (arr a)
+          -> CoreId
+          -> Size
+          -> RunGen (arr a, Length)
 compAlloc cmd coreId size = do
-    let (ty, incl) = getResultType cmd
+    let (ty, incl) = getArrElemType cmd
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return (mkArrayRef name, byteSize)
+
+getArrElemType :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
+           => AllocCMD (Param3 RunGen Prim PrimType) (proxy a)
+           -> (C.Type, Set.Set String)
+getArrElemType cmd =
+    let (ty, env) = cGen $ compType (proxyPred cmd) (proxyArg cmd)
+    in  (ty, C._includes env)
+
+instance CompTypeClass PrimType
+  where
+    compType _ = compType (Proxy :: Proxy PrimType')
+    compLit _  = compLit (Proxy :: Proxy PrimType')
+
+instance Interp AllocCMD RunGen (Param2 Prim PrimType)
+  where interp = compAllocCMD
 
 
 --------------------------------------------------------------------------------
@@ -105,7 +122,9 @@ class Monad m => ControlGen m
     genState :: m RGState
     fromRun  :: Run a -> m a
 
-compControlCMD :: ControlGen m => (Imp.ControlCMD Data) m a -> m a
+compControlCMD :: ControlGen m
+               => Imp.ControlCMD (Param3 m Data PrimType') a
+               -> m a
 compControlCMD (Imp.If cond t f)     = do
     s <- genState
     let t' = evalGen s t
@@ -114,25 +133,27 @@ compControlCMD (Imp.If cond t f)     = do
 compControlCMD (Imp.For range body)  = do
     s <- genState
     let body' = evalGen s . body
-    fromRun $ for range body'
+    fromRun $ Run $ singleInj $ Imp.For range (unRun . body')
 compControlCMD (Imp.While cond body) = do
     s <- genState
     let cond' = evalGen s cond
         body' = evalGen s body
     fromRun $ while cond' body'
 
-instance Interp (Imp.ControlCMD Data) RunGen where interp = compControlCMD
+instance Interp Imp.ControlCMD RunGen (Param2 Data PrimType')
+  where interp = compControlCMD
 
 
-compLocalBulkArrCMD :: (BulkArrCMD LocalArr) RunGen a -> RunGen a
+compLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 RunGen exp pred) a -> RunGen a
 compLocalBulkArrCMD (WriteArr offset spm range ram) =
     compLocalCopy "host_write_local"  spm ram offset range
 compLocalBulkArrCMD (ReadArr  offset spm range ram) =
     compLocalCopy "host_read_local"   spm ram offset range
 
-instance Interp (BulkArrCMD LocalArr) RunGen where interp = compLocalBulkArrCMD
+instance Interp (BulkArrCMD LocalArr) RunGen (Param2 exp pred)
+  where interp = compLocalBulkArrCMD
 
-compLocalCopy :: SmallType a => String
+compLocalCopy :: PrimType a => String
               -> LocalArr a-> Arr a
               -> Data Index -> IndexRange -> RunGen ()
 compLocalCopy op spm ram offset (lower, upper) = do
@@ -151,15 +172,16 @@ compLocalCopy op spm ram offset (lower, upper) = do
         ]
 
 
-compSharedBulkArrCMD :: (BulkArrCMD SharedArr) RunGen a -> RunGen a
+compSharedBulkArrCMD :: (BulkArrCMD SharedArr) (Param3 RunGen exp pred) a -> RunGen a
 compSharedBulkArrCMD (WriteArr offset spm range ram) =
     compSharedCopy "host_write_shared" spm ram offset range
 compSharedBulkArrCMD (ReadArr  offset spm range ram) =
     compSharedCopy "host_read_shared"  spm ram offset range
 
-instance Interp (BulkArrCMD SharedArr) RunGen where interp = compSharedBulkArrCMD
+instance Interp (BulkArrCMD SharedArr) RunGen (Param2 exp pred)
+  where interp = compSharedBulkArrCMD
 
-compSharedCopy :: SmallType a => String
+compSharedCopy :: PrimType a => String
                -> SharedArr a-> Arr a
                -> Data Index -> IndexRange -> RunGen ()
 compSharedCopy op spm ram offset (lower, upper) = do
@@ -174,7 +196,7 @@ compSharedCopy op spm ram offset (lower, upper) = do
         ]
 
 
-compMulticoreCMD :: MulticoreCMD RunGen a -> RunGen a
+compMulticoreCMD :: MulticoreCMD (Param3 RunGen exp pred) a -> RunGen a
 compMulticoreCMD (OnCore coreId comp) = do
     s <- genState
     compCore coreId
@@ -192,7 +214,8 @@ compMulticoreCMD (OnCore coreId comp) = do
         , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
 
-instance Interp MulticoreCMD RunGen where interp = compMulticoreCMD
+instance Interp MulticoreCMD RunGen (Param2 exp pred)
+  where interp = compMulticoreCMD
 
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
@@ -200,7 +223,7 @@ moduleName = ("core" ++) . show
 compCore :: CoreId -> Run () -> RunGen ()
 compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
-    let (_, env) = cGen $ C.wrapMain $ interpret $ lowerTop comp
+    let (_, env) = cGen $ C.wrapMain $ interpret $ translate comp
 
     -- collect pre-allocated local and shared arrays used by core main
     arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
@@ -251,18 +274,20 @@ mkArrayDecl coreId name = do
 -- Core layer
 --------------------------------------------------------------------------------
 
-instance Interp (Imp.ControlCMD Data) CoreGen where interp = compControlCMD
+instance Interp Imp.ControlCMD CoreGen (Param2 Data PrimType')
+  where interp = compControlCMD
 
 
-compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) CoreGen a -> CoreGen a
+compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 CoreGen exp pred) a -> CoreGen a
 compCoreLocalBulkArrCMD (WriteArr offset spm range ram) =
     compCoreLocalCopy "core_write_local"  spm ram offset range
 compCoreLocalBulkArrCMD (ReadArr  offset spm range ram) =
     compCoreLocalCopy "core_read_local"   spm ram offset range
 
-instance Interp (BulkArrCMD LocalArr) CoreGen where interp = compCoreLocalBulkArrCMD
+instance Interp (BulkArrCMD LocalArr) CoreGen (Param2 exp pred)
+  where interp = compCoreLocalBulkArrCMD
 
-compCoreLocalCopy :: SmallType a => String
+compCoreLocalCopy :: PrimType a => String
                   -> LocalArr a-> Arr a
                   -> Data Index -> IndexRange -> CoreGen ()
 compCoreLocalCopy op spm ram offset (lower, upper) = do
@@ -279,15 +304,16 @@ compCoreLocalCopy op spm ram offset (lower, upper) = do
         ]
 
 
-compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) CoreGen a -> CoreGen a
+compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) (Param3 CoreGen exp pred) a -> CoreGen a
 compCoreSharedBulkArrCMD (WriteArr offset spm range ram) =
     compCoreSharedCopy "core_write_shared" spm ram offset range
 compCoreSharedBulkArrCMD (ReadArr  offset spm range ram) =
     compCoreSharedCopy "core_read_shared"  spm ram offset range
 
-instance Interp (BulkArrCMD SharedArr) CoreGen where interp = compCoreSharedBulkArrCMD
+instance Interp (BulkArrCMD SharedArr) CoreGen (Param2 exp pred)
+  where interp = compCoreSharedBulkArrCMD
 
-compCoreSharedCopy :: SmallType a => String
+compCoreSharedCopy :: PrimType a => String
                    -> SharedArr a-> Arr a
                    -> Data Index -> IndexRange -> CoreGen ()
 compCoreSharedCopy op spm ram offset (lower, upper) = do
@@ -310,18 +336,11 @@ compCoreSharedCopy op spm ram offset (lower, upper) = do
 cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
-getResultType :: (VarPred exp a, CompExp exp)
-              => (AllocCMD exp) RunGen (proxy a)
-              -> (C.Type, Set.Set String)
-getResultType cmd =
-    let (ty, env) = cGen $ compTypeFromCMD cmd (proxyArg cmd)
-    in  (ty, C._includes env)
-
-mkArrayRef :: (ArrayWrapper arr, SmallType a) => VarId -> arr a
-mkArrayRef = wrapArr . Arr . Actual . Imp.ArrComp
+mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> arr a
+mkArrayRef = wrapArr . Arr . Single . Imp.ArrComp
 
 arrayRefName :: ArrayWrapper arr => arr a -> VarId
-arrayRefName (unwrapArr -> (Arr (Actual (Imp.ArrComp name)))) = name
+arrayRefName (unwrapArr -> (Arr (Single (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
@@ -334,10 +353,10 @@ type AddressMap = Map.Map CoreId [(LocalAddress, LocalAddress, Name)]
 type NameMap = Map.Map Name (CoreId, LocalAddress)
 type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
-type SharedMemRef = FunArg Data
+type SharedMemRef = FunArg Data PrimType'
 type SharedMemMap = Map.Map Name SharedMemRef
 data RGState = RGState
-    { group   :: FunArg Data
+    { group   :: FunArg Data PrimType'
     , nextId  :: Int
     , addrMap :: AddressMap
     , nameMap :: NameMap
@@ -356,7 +375,7 @@ instance ControlGen RunGen
     genState = get
     fromRun  = lift
 
-start :: FunArg Data -> RGState
+start :: FunArg Data PrimType' -> RGState
 start g = RGState
     { group   = g
     , nextId  = 0
@@ -472,8 +491,8 @@ sizeOf (isCTypeOf (Proxy :: Proxy Float)  -> True) = 4
 sizeOf (isCTypeOf (Proxy :: Proxy Double) -> True) = 8
 sizeOf cty = error $ "size of C type is unknown: " ++ show cty
 
-isCTypeOf :: Exp.CType a => proxy a -> C.Type -> Bool
+isCTypeOf :: CType a => proxy a -> C.Type -> Bool
 isCTypeOf ty cty = cty == cTypeOf ty
 
-cTypeOf :: Exp.CType a => proxy a -> C.Type
-cTypeOf = fst . cGen . Exp.cType
+cTypeOf :: CType a => proxy a -> C.Type
+cTypeOf = fst . cGen . cType
