@@ -7,6 +7,7 @@ import GHC.Exts (Constraint)
 
 import Feldspar
 import Feldspar.Primitive.Representation
+import Feldspar.Representation
 import Feldspar.Run
 import Feldspar.Run.Concurrent
 import Feldspar.Run.Representation
@@ -101,14 +102,13 @@ instance MonadComp CoreComp where
     while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
 
 
-runControlCMD :: MonadComp m
-              => Imp.ControlCMD (Param3 m Data pred) a -> m a
-runControlCMD (Imp.If cond t f)     = iff cond t f
-runControlCMD (Imp.For range body)  = error "FIXME: for range body"
-runControlCMD (Imp.While cond body) = while cond body
+runControlCompCMD :: Imp.ControlCMD (Param3 Comp Data PrimType') a -> Comp a
+runControlCompCMD (Imp.If cond t f)     = iff cond t f
+runControlCompCMD (Imp.For range body)  = Comp $ singleInj $ Imp.For range (unComp . body)
+runControlCompCMD (Imp.While cond body) = while cond body
 
-instance Interp Imp.ControlCMD Comp (Param2 Data pred)
-  where interp = runControlCMD
+instance Interp Imp.ControlCMD Comp (Param2 Data PrimType')
+  where interp = runControlCompCMD
 
 instance (ArrayWrapper arr) => Interp (BulkArrCMD arr) Comp (Param2 exp pred)
   where interp = runBulkArrCMD
@@ -158,8 +158,13 @@ instance (a ~ ()) => PrintfType (Host a)
     fprf h form = lift . Run . singleInj . Imp.FPrintf h form . reverse
 
 
-instance Interp Imp.ControlCMD Run (Param2 Data pred)
-  where interp = runControlCMD
+runControlRunCMD :: Imp.ControlCMD (Param3 Run Data PrimType') a -> Run a
+runControlRunCMD (Imp.If cond t f)     = iff cond t f
+runControlRunCMD (Imp.For range body)  = Run $ singleInj $ Imp.For range (unRun . body)
+runControlRunCMD (Imp.While cond body) = while cond body
+
+instance Interp Imp.ControlCMD Run (Param2 Data PrimType')
+  where interp = runControlRunCMD
 
 instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run (Param2 exp pred)
   where interp = runBulkArrCMD
