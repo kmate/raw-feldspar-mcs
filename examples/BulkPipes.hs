@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module BulkPipes where
 
 import qualified Prelude
