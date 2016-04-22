@@ -15,7 +15,7 @@ import Data.TypedStruct
 import Feldspar.Multicore.Representation
 import Feldspar.Primitive.Representation
 import Feldspar.Representation
-import Feldspar.Run hiding ((==))
+import Feldspar.Run hiding ((==), (.|.), mod)
 import Feldspar.Run.Compile
 import Feldspar.Run.Representation
 
@@ -102,11 +102,6 @@ getArrElemType :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
 getArrElemType cmd =
     let (ty, env) = cGen $ compType (proxyPred cmd) (proxyArg cmd)
     in  (ty, C._includes env)
-
-instance CompTypeClass PrimType
-  where
-    compType _ = compType (Proxy :: Proxy PrimType')
-    compLit _  = compLit (Proxy :: Proxy PrimType')
 
 instance Interp AllocCMD RunGen (Param2 Prim PrimType)
   where interp = compAllocCMD
