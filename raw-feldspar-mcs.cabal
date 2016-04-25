@@ -24,6 +24,8 @@ library
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
     Feldspar.Multicore
+    Zeldspar.Multicore.Compile
+    Zeldspar.Multicore
 
   default-language: Haskell2010
 
