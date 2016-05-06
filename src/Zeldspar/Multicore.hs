@@ -5,7 +5,7 @@ module Zeldspar.Multicore
   ) where
 
 import Control.Monad.Trans as C (lift)
-import Feldspar.Multicore as F hiding (lift, forever)
+import Feldspar.Multicore as F hiding (lift, forever, ofLength, VecChanSizeSpec)
 import Zeldspar as Z
 import Zeldspar.Multicore.Compile as Z
 import Zeldspar.Multicore.Representation as Z

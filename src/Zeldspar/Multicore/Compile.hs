@@ -1,130 +1,43 @@
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 module Zeldspar.Multicore.Compile where
 
 import Feldspar.Multicore
 import Feldspar.Multicore.Representation hiding (OnCore)
+
+import Zeldspar hiding (lift)
 import Zeldspar.Multicore.Representation
 
 
-import Data.Typeable
-
-import Debug.Trace
-
-{-
--- FIXME: use something else related to Transferable instead of SmallType?
-parZ :: forall inp out. (SmallType inp, SmallType out)
-     => ParZ inp out ()
-     -> Host (Data inp, Data Bool)      -- ^ Source
-     -> (Data out -> Host (Data Bool))  -- ^ Sink
-     -> Multicore ()
-parZ ps inp out= do
-    i :: HostToCorePipe inp <- allocHostPipe 0 10
-    o :: CoreToHostPipe out <- allocHostPipe 1 10
-    onHost $ do
-        initPipe i
-        initPipe o
-        
-        undefined -- TODO: implement the translation with Pipes
-        -- use foldPP from Ziria.Parallel if possible
--}
-
-translatePar :: forall inp out. (CoreTransferable inp, CoreTransferable out)
+translatePar :: forall inp out. (Transferable inp, Transferable out)
              => MulticoreZ inp out
-             -> (Host (inp, Data Bool))    -- ^ Source
-             -> (out -> Host (Data Bool))  -- ^ Sink
+             -> (Host inp)        -- ^ Source
+             -> SizeSpec inp      -- ^ Source channel size
+             -> (out -> Host ())  -- ^ Sink
+             -> SizeSpec out      -- ^ Sink channel size
              -> Multicore ()
-translatePar ps inp out = do
-    i <- newChan (Proxy :: Proxy inp) sharedId 0 10
-    let last = parSize ps - 1
-        ids  = Prelude.zip [0..last] ([1..last] ++ [sharedId])
-{-
-    foldParZ 10 i ps $ \chs i p -> do
-      -- o <- allocCorePipe 0 1 chs
-      onHost $ onCore 0 $ void $ do return ()
-      --  translate (p >> return ())
-          --  (error "read i") -- (readC t i o)
-          --  (error "write o")-- (writeC t i o)
-      --  closeChan i
-      --  closeChan o
-      onHost $ printf "at least folds\n" -- o
-      return $ error "this"
-    -- o :: CoreToHostPipe (Internal out) <- allocHostPipe 1 10
--}
-    traceShow ids $ onHost $ do
---        initPipe i
-        -- initPipe o
-        printf "at least does something\n"
---    error "unfinished"
+translatePar ps inp ichs out ochs = do
+    i <- newChan host 0 ichs
+    o <- foldParZ ochs i host ps $ \ chs i c n p -> do
+        o <- newChan c n chs
+        onHost $ onCore c $ translate (p >> return ()) (readChan i) (writeChan o)
+        return o
+    onHost $ do
+        while (return true) $ do
+            x <- inp
+            writeChan i x
+            x <- readChan o
+            out x
 
--- class    (Syntax a, PrimType (Internal a), Transferable a) => CoreTransferable a
---instance (Syntax a, PrimType (Internal a), Transferable a) => CoreTransferable a
+-- TODO: handle next core id for channel creation correctly on fold below
 
-data CoreChan a = forall p. Pipe p => CoreChan (p a)
-
-class CoreTransferable a
-  where
-    type ChanElemType a :: *
-
-    newChan :: proxy a
-            -> CoreId
-            -> CoreId
-            -> Length
-            -> Multicore (CoreChan (ChanElemType a))
-
-instance PrimType a => CoreTransferable (Data a)
-  where
-    type ChanElemType (Data a) = a
-    newChan _ from to l
-        | sharedId Prelude.== from = do
-            p :: HostToCorePipe a <- allocHostPipe to l
-            onHost $ initPipe p
-            return $ CoreChan p
-        | sharedId Prelude.== to   = do
-            p :: CoreToHostPipe a <- allocHostPipe from l
-            onHost $ initPipe p
-            return $ CoreChan p
-        | otherwise = do
-            p <- allocCorePipe from to l
-            onHost $ initPipe p
-            return $ CoreChan p
-
-parSize :: MulticoreZ inp out -> Length
-parSize (OnCore _ _)    = 1
-parSize (Connect _ a b) = parSize a + parSize b
-
-{-
-foldParZ :: ( CoreTransferable inp, CoreTransferable out )
-         => Length
-         -> HostToCorePipe (Internal inp)
-         -> ParZ inp out m a
-         -> (forall pi po inp out a
-             .  ( Pipe pi, Pipe po
-                , CoreTransferable inp, CoreTransferable out )
-             => Length
-             -> pi (Internal inp)
-             -> Z inp out m a
-             -> Multicore (po (Internal out)))
-         -> Multicore (CoreToHostPipe (Internal out))
-foldParZ chs acc (LiftP p)     f = f chs acc p
-foldParZ chs acc (ConnP s a b) f = do
-    acc' <- foldParZ {-s-} 0 acc a f
-    let acc'' = undefined
-    foldParZ chs acc'' b f
--}
-
-{-
--- TODO: do the same thing as Zeldspar.Paralllel did, just pass Pipes instead of chans
-
--- | Left fold over a 'ParZ'
 foldParZ :: (Monad m, Transferable inp, Transferable out)
          => SizeSpec out
          -> c inp
-         -> ParZ inp out m a
+         -> CoreId
+         -> MulticoreZ inp out
          -> (forall inp out a. (Transferable inp, Transferable out)
-             => SizeSpec out -> c inp -> Z inp out m a -> m (c out))
+             => SizeSpec out -> c inp -> CoreId -> CoreId -> CoreZ inp out -> m (c out))
          -> m (c out)
-foldParZ chs acc (LiftP p)     f = f chs acc p
-foldParZ chs acc (ConnP s a b) f = foldParZ s acc a f >>= \acc' -> foldParZ chs acc' b f
--}
+foldParZ chs acc next (OnCore p c)    f = f chs acc c next p
+foldParZ chs acc next (Connect s a b) f = do
+    acc' <- foldParZ s acc next a f
+    foldParZ chs acc' next b f

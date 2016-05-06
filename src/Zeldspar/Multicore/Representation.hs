@@ -11,8 +11,8 @@ type CoreZ inp out = Z inp out CoreComp ()
 
 data MulticoreZ inp out
   = OnCore (CoreZ inp out) CoreId
-    -- TODO: restrict `mid` and replace `Length`
-  | forall mid. Connect Length (MulticoreZ inp mid) (MulticoreZ mid out)
+  | forall mid. Transferable mid
+  => Connect (SizeSpec mid) (MulticoreZ inp mid) (MulticoreZ mid out)
 
 
 --------------------------------------------------------------------------------
@@ -26,8 +26,9 @@ on = OnCore
 --   with (>>|) to create a mixfix operator with a channel size specifier in the
 --   middle, for example 'a |>>n>>| b' composes 'a' and 'b' through a channel of
 --   size 'n'.
-(|>>) :: MulticoreZ inp mid
-      -> Length  -- replace to a size spec
+(|>>) :: Transferable mid
+      => MulticoreZ inp mid
+      -> SizeSpec mid
       -> (MulticoreZ mid out -> MulticoreZ inp out)
 l |>> len = Connect len l
 
