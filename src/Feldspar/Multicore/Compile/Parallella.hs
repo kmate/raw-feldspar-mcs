@@ -21,6 +21,7 @@ import Feldspar.Run.Representation
 
 import qualified Language.C.Monad as C
 import qualified Language.C.Quote as C
+import qualified Language.C.Quote.C as C
 import qualified Language.C.Syntax as C
 import Language.Embedded.Backend.C.Expression
 import Language.Embedded.Expression
@@ -138,6 +139,13 @@ compControlCMD (Imp.While cond body) = do
 
 instance Interp Imp.ControlCMD RunGen (Param2 Data PrimType')
   where interp = compControlCMD
+
+
+compWaitCMD :: Monad m => WaitCMD (Param3 m exp pred) a -> m a
+compWaitCMD BusyWait = return ()
+
+instance Interp WaitCMD RunGen (Param2 exp pred)
+  where interp = compWaitCMD
 
 
 compLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 RunGen exp pred) a -> RunGen a
@@ -272,6 +280,10 @@ mkArrayDecl coreId name = do
 
 instance Interp Imp.ControlCMD CoreGen (Param2 Data PrimType')
   where interp = compControlCMD
+
+
+instance Interp WaitCMD CoreGen (Param2 exp pred)
+  where interp = compWaitCMD
 
 
 compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 CoreGen exp pred) a -> CoreGen a
@@ -474,17 +486,19 @@ sharedBase = 0x1000000
 
 
 sizeOf :: C.Type -> Size
-sizeOf (isCTypeOf (Proxy :: Proxy Bool)   -> True) = 1
-sizeOf (isCTypeOf (Proxy :: Proxy Int8)   -> True) = 1
-sizeOf (isCTypeOf (Proxy :: Proxy Int16)  -> True) = 2
-sizeOf (isCTypeOf (Proxy :: Proxy Int32)  -> True) = 4
-sizeOf (isCTypeOf (Proxy :: Proxy Int64)  -> True) = 8
-sizeOf (isCTypeOf (Proxy :: Proxy Word8)  -> True) = 1
-sizeOf (isCTypeOf (Proxy :: Proxy Word16) -> True) = 2
-sizeOf (isCTypeOf (Proxy :: Proxy Word32) -> True) = 4
-sizeOf (isCTypeOf (Proxy :: Proxy Word64) -> True) = 8
-sizeOf (isCTypeOf (Proxy :: Proxy Float)  -> True) = 4
-sizeOf (isCTypeOf (Proxy :: Proxy Double) -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy Bool)             -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Int8)             -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Int16)            -> True) = 2
+sizeOf (isCTypeOf (Proxy :: Proxy Int32)            -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Int64)            -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy Word8)            -> True) = 1
+sizeOf (isCTypeOf (Proxy :: Proxy Word16)           -> True) = 2
+sizeOf (isCTypeOf (Proxy :: Proxy Word32)           -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Word64)           -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy Float)            -> True) = 4
+sizeOf (isCTypeOf (Proxy :: Proxy Double)           -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy (Complex Float))  -> True) = 8
+sizeOf (isCTypeOf (Proxy :: Proxy (Complex Double)) -> True) = 16
 sizeOf cty = error $ "size of C type is unknown: " ++ show cty
 
 isCTypeOf :: CType a => proxy a -> C.Type -> Bool
@@ -492,3 +506,17 @@ isCTypeOf ty cty = cty == cTypeOf ty
 
 cTypeOf :: CType a => proxy a -> C.Type
 cTypeOf = fst . cGen . cType
+
+instance CType (Complex Float)
+  where
+    cType _ = C.addSystemInclude "tgmath.h" >> return [C.cty| _Complex float |]
+    cLit (r :+ 0) = return [C.cexp| $r |]
+    cLit (0 :+ i) = return [C.cexp| $i * I |]
+    cLit (r :+ i) = return [C.cexp| $r + $i * I |]
+
+instance CType (Complex Double)
+  where
+    cType _ = C.addSystemInclude "tgmath.h" >> return [C.cty| _Complex double |]
+    cLit (r :+ 0) = return [C.cexp| $r |]
+    cLit (0 :+ i) = return [C.cexp| $i * I |]
+    cLit (r :+ i) = return [C.cexp| $r + $i * I |]

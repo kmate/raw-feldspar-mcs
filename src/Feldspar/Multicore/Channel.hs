@@ -128,7 +128,7 @@ instance PrimType a => Transferable' CoreComp (Vector (Data a))
     writeChan (CoreToHostChan s p) = writeChan' s p
     writeChan (CoreToCoreChan s p) = writeChan' s p
 
-readChan' :: (MonadComp m, Pipe p, BulkPipeReader p m, PrimType a)
+readChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeReader p m, PrimType a)
           => VecChanSizeSpec -> p a -> m (Vector (Data a))
 readChan' (VecChanSizeSpec _ l) p = do
     let l' :: Data Length = value l
@@ -137,7 +137,7 @@ readChan' (VecChanSizeSpec _ l) p = do
     lenRef :: Ref Length <- initRef l'
     unsafeFreezeStore $ Store (lenRef, arr)
 
-writeChan' :: (MonadComp m, Pipe p, BulkPipeWriter p m, PrimType a)
+writeChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeWriter p m, PrimType a)
            => VecChanSizeSpec -> p a -> Vector (Data a) -> m ()
 writeChan' (VecChanSizeSpec _ l) p v = do
     let l' :: Data Length = value l

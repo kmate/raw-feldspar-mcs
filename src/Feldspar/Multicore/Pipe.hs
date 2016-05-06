@@ -43,14 +43,14 @@ readPipeA pipe = do
         return elem
 
 -- | Synchronously reads an element from a pipe. Blocks until an element found.
-readPipe  :: (Pipe p, PipeReader p m, PrimType a)
+readPipe  :: (Pipe p, Wait m, PipeReader p m, PrimType a)
           => p a -> m (Data a)
 readPipe pipe = do
         value <- newRef
         noValue <- initRef true
         while (getRef noValue) $ do
             caseOptionT (readPipeA pipe)
-                (const $ return ())
+                (const $ busyWait)
                 (setRef value >=> (const $ setRef noValue false))
         getRef value
 
@@ -80,8 +80,8 @@ writePipeA elem pipe = do
     getRef done
 
 -- | Synchronously writes an element into a pipe. Blocks until the write succeeds.
-writePipe  :: (Pipe p, PipeWriter p m, PrimType a) => Data a -> p a -> m ()
-writePipe elem pipe = while (not <$> writePipeA elem pipe) $ return ()
+writePipe  :: (Pipe p, Wait m, PipeWriter p m, PrimType a) => Data a -> p a -> m ()
+writePipe elem pipe = while (not <$> writePipeA elem pipe) $ busyWait
 
 
 class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
@@ -89,15 +89,16 @@ class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
     getElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously reads multiple elements from a pipe.
---   Immediately returns the number of elements read.
-pullPipeA :: (Pipe p, BulkPipeReader p m, PrimType a)
+--   Immediately returns the number of elements read,
+--   when the pipe is not empty.
+pullPipeA :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
-pullPipeA pipe  (lower, upper) dst = do
+pullPipeA pipe (lower, upper) dst = do
     -- wait for items in the buffer
     while (do
         rx <- getCReadPtr pipe
         wx <- getCWritePtr pipe
-        return $ rx == wx) $ return ()
+        return $ rx == wx) $ busyWait
     -- calculate items left
     let left = upper - lower + 1
     -- how many items could it read in this round
@@ -118,7 +119,7 @@ pullPipeA pipe  (lower, upper) dst = do
 
 -- | Synchronously reads multple elements from a pipe.
 --   Blocks until all the elements in the given range are read.
-pullPipe  :: (Pipe p, BulkPipeReader p m, PrimType a)
+pullPipe  :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m ()
 pullPipe pipe (lower, upper) dst = do
     let total = upper - lower + 1
@@ -142,8 +143,9 @@ class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
     setElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously writes multiple elements into a pipe.
---   Immediately returns the number of elements written.
-pushPipeA :: (Pipe p, BulkPipeWriter p m, PrimType a)
+--   Immediately returns the number of elements written,
+--   when the pipe is not full.
+pushPipeA :: (Pipe p, Wait m, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pushPipeA pipe (lower, upper) src = do
     let size = getSize pipe
@@ -151,7 +153,7 @@ pushPipeA pipe (lower, upper) src = do
     while (do
         rx <- getPReadPtr  pipe
         wx <- getPWritePtr pipe
-        return $ (wx + 1) `rem` size == rx) $ return ()
+        return $ (wx + 1) `rem` size == rx) $ busyWait
     -- calculate items left
     let left = upper - lower + 1
     -- how many items could be writen in this round
@@ -172,7 +174,7 @@ pushPipeA pipe (lower, upper) src = do
 
 -- | Synchronously writes multiple elements into a pipe.
 --   Blcoks untipl all the elements in the given range are written.
-pushPipe  :: (Pipe p, BulkPipeWriter p m, PrimType a)
+pushPipe  :: (Pipe p, Wait m, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m ()
 pushPipe pipe (lower, upper) src = do
     let total = upper - lower + 1

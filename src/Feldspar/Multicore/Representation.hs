@@ -78,10 +78,29 @@ runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
 
 
 --------------------------------------------------------------------------------
+-- Busy waiting
+--------------------------------------------------------------------------------
+
+data WaitCMD fs a
+  where
+    BusyWait :: WaitCMD (Param3 (prog :: * -> *)
+                                (exp  :: * -> *)
+                                (pred :: * -> Constraint)) ()
+
+instance HFunctor WaitCMD
+  where
+    hfmap _ BusyWait = BusyWait
+
+runWaitCMD :: WaitCMD (Param3 Run exp pred) a -> Run a
+runWaitCMD BusyWait = delayThread (value 100 :: Data Int32)
+
+
+--------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
 
 type CoreCMD = Imp.ControlCMD
+           :+: WaitCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
 
@@ -89,9 +108,9 @@ newtype CoreCompT m a = CoreComp
     { unCoreComp :: ProgramT CoreCMD (Param2 Data PrimType') m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
-type CoreComp = CoreCompT Comp
+type CoreComp = CoreCompT Run
 
-runCoreComp :: CoreComp a -> Comp a
+runCoreComp :: CoreComp a -> Run a
 runCoreComp = interpretT id . unCoreComp
 
 
@@ -102,16 +121,13 @@ instance MonadComp CoreComp where
     while cont body = CoreComp $ Imp.while (unCoreComp cont) (unCoreComp body)
 
 
-runControlCompCMD :: Imp.ControlCMD (Param3 Comp Data PrimType') a -> Comp a
+runControlCompCMD :: Imp.ControlCMD (Param3 Run Data PrimType') a -> Run a
 runControlCompCMD (Imp.If cond t f)     = iff cond t f
-runControlCompCMD (Imp.For range body)  = Comp $ singleInj $ Imp.For range (unComp . body)
+runControlCompCMD (Imp.For range body)  = Run $ singleInj $ Imp.For range (unRun . body)
 runControlCompCMD (Imp.While cond body) = while cond body
 
-instance Interp Imp.ControlCMD Comp (Param2 Data PrimType')
-  where interp = runControlCompCMD
-
-instance (ArrayWrapper arr) => Interp (BulkArrCMD arr) Comp (Param2 exp pred)
-  where interp = runBulkArrCMD
+instance Interp WaitCMD Run (Param2 Data PrimType')
+  where interp = runWaitCMD
 
 
 --------------------------------------------------------------------------------
@@ -132,6 +148,7 @@ instance HFunctor MulticoreCMD
 
 
 type HostCMD = Imp.ControlCMD
+           :+: WaitCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
            :+: MulticoreCMD
