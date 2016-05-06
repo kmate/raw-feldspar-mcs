@@ -59,6 +59,7 @@ wrapESDK program = do
     let sharedTypeIncludes = fromMaybe Set.empty (Map.lookup sharedId (inclMap state))
     mapM_ addInclude sharedTypeIncludes
     mapM_ (callProc "e_free" . return . snd) (Map.toList $ shmMap state)
+    callProc "e_reset_group" [ groupAddr ]
     callProc "e_close" [ groupAddr ]
     callProc "e_finalize" []
     return result
