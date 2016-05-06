@@ -118,36 +118,28 @@ instance PrimType a => ChanType (Vector (Data a))
 
 instance PrimType a => Transferable' Host (Vector (Data a))
   where
-    readChan (CoreToHostChan (VecChanSizeSpec _ l) p) = do
-        let l' :: Data Length = value l
-        arr <- newArr l'
-        pullPipe p (0, l' - 1) arr
-        lenRef :: Ref Length <- initRef l'
-        unsafeFreezeStore $ Store (lenRef, arr)
-    writeChan (HostToCoreChan (VecChanSizeSpec _ l) p) v = do
-        let l' :: Data Length = value l
-        Store (_, arr) <- initStore v
-        pushPipe p (0, l' - 1) arr
+    readChan  (CoreToHostChan s p) = readChan'  s p
+    writeChan (HostToCoreChan s p) = writeChan' s p
 
 instance PrimType a => Transferable' CoreComp (Vector (Data a))
   where
-    readChan (HostToCoreChan (VecChanSizeSpec _ l) p) = do
-        let l' :: Data Length = value l
-        arr <- newArr l'
-        pullPipe p (0, l' - 1) arr
-        lenRef :: Ref Length <- initRef l'
-        unsafeFreezeStore $ Store (lenRef, arr)
-    readChan (CoreToCoreChan (VecChanSizeSpec _ l) p) = do
-        let l' :: Data Length = value l
-        arr <- newArr l'
-        pullPipe p (0, l' - 1) arr
-        lenRef :: Ref Length <- initRef l'
-        unsafeFreezeStore $ Store (lenRef, arr)
-    writeChan (CoreToHostChan (VecChanSizeSpec _ l) p) v = do
-        let l' :: Data Length = value l
-        Store (_, arr) <- initStore v
-        pushPipe p (0, l' - 1) arr
-    writeChan (CoreToCoreChan (VecChanSizeSpec _ l) p) v = do
-        let l' :: Data Length = value l
-        Store (_, arr) <- initStore v
-        pushPipe p (0, l' - 1) arr
+    readChan  (HostToCoreChan s p) = readChan'  s p
+    readChan  (CoreToCoreChan s p) = readChan'  s p
+    writeChan (CoreToHostChan s p) = writeChan' s p
+    writeChan (CoreToCoreChan s p) = writeChan' s p
+
+readChan' :: (MonadComp m, Pipe p, BulkPipeReader p m, PrimType a)
+          => VecChanSizeSpec -> p a -> m (Vector (Data a))
+readChan' (VecChanSizeSpec _ l) p = do
+    let l' :: Data Length = value l
+    arr <- newArr l'
+    pullPipe p (0, l' - 1) arr
+    lenRef :: Ref Length <- initRef l'
+    unsafeFreezeStore $ Store (lenRef, arr)
+
+writeChan' :: (MonadComp m, Pipe p, BulkPipeWriter p m, PrimType a)
+           => VecChanSizeSpec -> p a -> Vector (Data a) -> m ()
+writeChan' (VecChanSizeSpec _ l) p v = do
+    let l' :: Data Length = value l
+    Store (_, arr) <- initStore v
+    pushPipe p (0, l' - 1) arr
