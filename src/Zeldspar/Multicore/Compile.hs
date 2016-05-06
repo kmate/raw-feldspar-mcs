@@ -9,10 +9,10 @@ import Zeldspar.Multicore.Representation
 
 translatePar :: forall inp out. (Transferable inp, Transferable out)
              => MulticoreZ inp out
-             -> (Host inp)        -- ^ Source
-             -> SizeSpec inp      -- ^ Source channel size
-             -> (out -> Host ())  -- ^ Sink
-             -> SizeSpec out      -- ^ Sink channel size
+             -> (Host (inp, Data Bool))    -- ^ Source
+             -> SizeSpec inp               -- ^ Source channel size
+             -> (out -> Host (Data Bool))  -- ^ Sink
+             -> SizeSpec out               -- ^ Sink channel size
              -> Multicore ()
 translatePar ps inp ichs out ochs = do
     let next = nextCoreIds ps
@@ -22,11 +22,18 @@ translatePar ps inp ichs out ochs = do
         onHost $ onCore c $ translate (p >> return ()) (readChan i) (writeChan o)
         return o
     onHost $ do
-        while (return true) $ do
-            x <- inp
+        continue <- initRef true
+        while (getRef continue) $ do
+            (x, dontStop) <- inp
             writeChan i x
-            x <- readChan o
-            out x
+            -- TODO: run source invocation in a separate thread of host
+            iff dontStop
+                (do x <- readChan o
+                    dontStop <- out x
+                    iff dontStop
+                        (return ())
+                        (setRef continue false))
+                (setRef continue false)
 
 
 foldParZ :: (Monad m, Transferable inp, Transferable out)

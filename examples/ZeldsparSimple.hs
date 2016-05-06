@@ -15,10 +15,10 @@ simple = do
         writeOutput
         chanSize
   where
-    readInput :: Host (Data Int32)
-    readInput = liftHost $ fget stdin
-    writeOutput :: Data Int32 -> Host ()
-    writeOutput o = printf "> %d\n" o
+    readInput :: Host (Data Int32, Data Bool)
+    readInput = liftHost $ fget stdin >>= \i -> return (i, true)
+    writeOutput :: Data Int32 -> Host (Data Bool)
+    writeOutput o = printf "> %d\n" o >> return true
 
 inc :: CoreZ (Data Int32) (Data Int32)
 inc = zmap (+1)
