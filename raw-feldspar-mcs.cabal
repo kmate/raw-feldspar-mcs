@@ -23,7 +23,9 @@ library
     Feldspar.Multicore.Pipe
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
+    Feldspar.Multicore.Channel
     Feldspar.Multicore
+    Zeldspar.Multicore.Representation
     Zeldspar.Multicore.Compile
     Zeldspar.Multicore
 
