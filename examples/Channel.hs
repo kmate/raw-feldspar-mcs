@@ -60,12 +60,12 @@ vectors vecSize chanSize = do
                 printf "> %d\n" item
 
 inc :: Chan (Vector (Data Int32)) -> Chan (Vector (Data Int32)) -> CoreComp ()
-inc inp out = do
+inc inp out = forever $ do
     v <- readChan inp
     writeChan out $ map (+1) v
 
 twice :: Chan (Vector (Data Int32)) -> Chan (Vector (Data Int32)) -> CoreComp ()
-twice inp out = do
+twice inp out = forever $ do
     v <- readChan inp
     writeChan out $ map (*2) v
 

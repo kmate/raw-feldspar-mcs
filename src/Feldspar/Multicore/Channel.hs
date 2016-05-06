@@ -118,22 +118,36 @@ instance PrimType a => ChanType (Vector (Data a))
 
 instance PrimType a => Transferable' Host (Vector (Data a))
   where
-{-
-    readChan (CoreToHostChan _ p) = do
-        arr <- newArr 1
-        pullPipe p (0,0) arr
-        elem <- getArr 0 arr
-        return elem
-    writeChan (HostToCoreChan _ p) v = do
-        arr <- newArr 1
-        setArr 0 v arr
-        pushPipe p (0,0) arr
--}
+    readChan (CoreToHostChan (VecChanSizeSpec _ l) p) = do
+        let l' :: Data Length = value l
+        arr <- newArr l'
+        pullPipe p (0, l' - 1) arr
+        lenRef :: Ref Length <- initRef l'
+        unsafeFreezeStore $ Store (lenRef, arr)
+    writeChan (HostToCoreChan (VecChanSizeSpec _ l) p) v = do
+        let l' :: Data Length = value l
+        Store (_, arr) <- initStore v
+        pushPipe p (0, l' - 1) arr
+
 instance PrimType a => Transferable' CoreComp (Vector (Data a))
   where
-{-
-    readChan (HostToCoreChan _ p) = readPipe p
-    readChan (CoreToCoreChan _ p) = readPipe p
-    writeChan (CoreToHostChan _ p) v = writePipe v p
-    writeChan (CoreToCoreChan _ p) v = writePipe v p
--}
+    readChan (HostToCoreChan (VecChanSizeSpec _ l) p) = do
+        let l' :: Data Length = value l
+        arr <- newArr l'
+        pullPipe p (0, l' - 1) arr
+        lenRef :: Ref Length <- initRef l'
+        unsafeFreezeStore $ Store (lenRef, arr)
+    readChan (CoreToCoreChan (VecChanSizeSpec _ l) p) = do
+        let l' :: Data Length = value l
+        arr <- newArr l'
+        pullPipe p (0, l' - 1) arr
+        lenRef :: Ref Length <- initRef l'
+        unsafeFreezeStore $ Store (lenRef, arr)
+    writeChan (CoreToHostChan (VecChanSizeSpec _ l) p) v = do
+        let l' :: Data Length = value l
+        Store (_, arr) <- initStore v
+        pushPipe p (0, l' - 1) arr
+    writeChan (CoreToCoreChan (VecChanSizeSpec _ l) p) v = do
+        let l' :: Data Length = value l
+        Store (_, arr) <- initStore v
+        pushPipe p (0, l' - 1) arr
