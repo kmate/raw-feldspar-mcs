@@ -3,6 +3,8 @@ module Zeldspar.Multicore
   , module Z
   ) where
 
-import Feldspar.Multicore as F hiding (lift, forever, ofLength, VecChanSizeSpec)
+import Feldspar.Multicore as F hiding (lift, forever)
 import Zeldspar.Multicore.Compile as Z
+import Zeldspar.Multicore.Frontend as Z
 import Zeldspar.Multicore.Representation as Z
+import Zeldspar as Z hiding (ofLength, VecChanSizeSpec)
