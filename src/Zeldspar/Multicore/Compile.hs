@@ -3,7 +3,7 @@ module Zeldspar.Multicore.Compile where
 import Feldspar.Multicore
 import Feldspar.Multicore.Representation hiding (OnCore)
 
-import Zeldspar hiding (lift)
+import Zeldspar (translate)
 import Zeldspar.Multicore.Representation
 
 
