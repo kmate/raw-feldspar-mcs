@@ -39,7 +39,7 @@ readPipeA pipe = do
     lift $ do
         rx <- getCReadPtr pipe
         elem <- getElement pipe rx
-        setReadPtr pipe ((rx + 1) `rem` size)
+        setReadPtr pipe ((rx + 1) `mod'` size)
         return elem
 
 -- | Synchronously reads an element from a pipe. Blocks until an element found.
@@ -69,7 +69,7 @@ writePipeA elem pipe = do
     rx <- getPReadPtr  pipe
     wx <- getPWritePtr pipe
     done <- initRef false
-    let wx' = (wx + 1) `rem` size
+    let wx' = (wx + 1) `mod'` size
     iff (wx' == rx)
         (setRef done false)
         (do
@@ -104,17 +104,18 @@ pullPipeA pipe (lower, upper) dst = do
     -- how many items could it read in this round
     rx <- getCReadPtr pipe
     wx <- getCWritePtr pipe
-    let size = getSize pipe
-        available = (size + wx -rx) `rem` size
-        toRead = min left available
-        start = lower
+    size <- force $ getSize pipe
+    available <- force $ (size + wx -rx) `mod'` size
+    toRead <- force $ min left available
+    let start = lower
     iff (rx + toRead <= size)
         (getElements pipe rx (start, start + toRead - 1) dst)
-        (do let toEnd = size - rx
+        (do toEnd <- force $ size - rx
             getElements pipe rx (start, start + toEnd - 1) dst
-            let start' = start + toEnd
-            getElements pipe 0 (start', start' + toRead - (size - rx) - 1) dst)
-    setReadPtr pipe ((rx + toRead) `rem` size)
+            start' <- force $ start + toEnd
+            getElements pipe 0 (start', start' + toRead - toEnd - 1) dst)
+    rx' <- force $ (rx + toRead) `mod'` size
+    setReadPtr pipe rx'
     return toRead
 
 -- | Synchronously reads multple elements from a pipe.
@@ -153,23 +154,24 @@ pushPipeA pipe (lower, upper) src = do
     while (do
         rx <- getPReadPtr  pipe
         wx <- getPWritePtr pipe
-        return $ (wx + 1) `rem` size == rx) $ busyWait
+        return $ (wx + 1) `mod'` size == rx) $ busyWait
     -- calculate items left
     let left = upper - lower + 1
     -- how many items could be writen in this round
     rx <- getPReadPtr  pipe
     wx <- getPWritePtr pipe
-    let available = ((size + wx - rx) `rem` size)
-        empty = size - available - 1  -- one slot is reserved in this setup
-        toWrite = min left empty
-        start = lower
+    available <- force $ (size + wx - rx) `mod'` size
+    empty <- force $ size - available - 1  -- one slot is reserved in this setup
+    toWrite <- force $ min left empty
+    let start = lower
     iff (wx + toWrite <= size)
         (setElements pipe wx (start, start + toWrite - 1) src)
-        (do let toEnd = size - wx
+        (do toEnd <- force $ size - wx
             setElements pipe wx (start, start + toEnd - 1) src
-            let start' = start + toEnd
+            start' <- force $ start + toEnd
             setElements pipe 0 (start', start' + (toWrite - toEnd) - 1) src)
-    setWritePtr pipe ((wx + toWrite) `rem` size)
+    wx' <- force $ (wx + toWrite) `mod'` size
+    setWritePtr pipe wx'
     return toWrite
 
 -- | Synchronously writes multiple elements into a pipe.
@@ -184,6 +186,14 @@ pushPipe pipe (lower, upper) src = do
         done <- getRef written
         toWrite <- pushPipeA pipe (lower + done, upper) src
         setRef written (done + toWrite)
+
+
+--------------------------------------------------------------------------------
+-- Performance utility
+--------------------------------------------------------------------------------
+
+mod' :: (PrimType a, Integral a) => Data a -> Data a -> Data a
+a `mod'` m = (a < m) ? a $ a - m
 
 
 --------------------------------------------------------------------------------
