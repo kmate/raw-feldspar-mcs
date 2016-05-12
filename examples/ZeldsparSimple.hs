@@ -4,24 +4,30 @@ import qualified Prelude
 
 import Zeldspar.Multicore
 
--- TODO: reimplement example Simple with multicore Zeldspar
 
 simple :: Multicore ()
-simple = translatePar (inc |>>>| twice) readInput writeOutput
+simple = do
+    let chanSize = 10
+    translatePar
+        (inc `on` 0 |>>chanSize>>| twice `on` 1)
+        readInput
+        chanSize
+        writeOutput
+        chanSize
   where
     readInput :: Host (Data Int32, Data Bool)
-    readInput = undefined
+    readInput = liftHost $ fget stdin >>= \i -> return (i, true)
     writeOutput :: Data Int32 -> Host (Data Bool)
-    writeOutput = undefined
+    writeOutput o = printf "> %d\n" o >> return true
 
-inc :: Zun (Data Int32) (Data Int32) ()
+inc :: CoreZ (Data Int32) (Data Int32)
 inc = zmap (+1)
 
-twice :: Zun (Data Int32) (Data Int32) ()
+twice :: CoreZ (Data Int32) (Data Int32)
 twice = zmap (*2)
 
-zmap :: (inp -> out) -> Zun inp out ()
-zmap f = do
+zmap :: (inp -> out) -> CoreZ inp out
+zmap f = loop $ do
     x <- receive
     emit (f x)
 
@@ -40,4 +46,3 @@ testAll = do
 runTestCompiled = runCompiled' opts test
   where
     opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
-

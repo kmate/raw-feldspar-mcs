@@ -23,7 +23,10 @@ library
     Feldspar.Multicore.Pipe
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
+    Feldspar.Multicore.Channel
     Feldspar.Multicore
+    Zeldspar.Multicore.Representation
+    Zeldspar.Multicore.Frontend
     Zeldspar.Multicore.Compile
     Zeldspar.Multicore
 
@@ -38,8 +41,7 @@ library
     GeneralizedNewtypeDeriving
     KindSignatures
     MultiParamTypeClasses
---    PatternSynonyms
---    Rank2Types
+    Rank2Types
     ScopedTypeVariables
     TypeFamilies
     TypeOperators

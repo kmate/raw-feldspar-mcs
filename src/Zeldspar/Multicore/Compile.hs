@@ -1,30 +1,79 @@
 module Zeldspar.Multicore.Compile where
 
 import Feldspar.Multicore
-import Zeldspar.Parallel
+import Feldspar.Multicore.Representation hiding (OnCore)
 
-{-
--- FIXME: use something else related to Transferable instead of SmallType?
-parZ :: forall inp out. (SmallType inp, SmallType out)
-     => ParZ inp out ()
-     -> Host (Data inp, Data Bool)      -- ^ Source
-     -> (Data out -> Host (Data Bool))  -- ^ Sink
-     -> Multicore ()
-parZ ps inp out= do
-    i :: HostToCorePipe inp <- allocHostPipe 0 10
-    o :: CoreToHostPipe out <- allocHostPipe 1 10
-    onHost $ do
-        initPipe i
-        initPipe o
-        
-        undefined -- TODO: implement the translation with Pipes
-        -- use foldPP from Ziria.Parallel if possible
--}
+import Zeldspar (translate)
+import Zeldspar.Multicore.Representation
+
 
 translatePar :: forall inp out. (Transferable inp, Transferable out)
-             => ParZun inp out ()
+             => MulticoreZ inp out
              -> (Host (inp, Data Bool))    -- ^ Source
+             -> SizeSpec inp               -- ^ Source channel size
              -> (out -> Host (Data Bool))  -- ^ Sink
+             -> SizeSpec out               -- ^ Sink channel size
              -> Multicore ()
-translatePar = undefined
+translatePar ps inp ichs out ochs = do
+    let next = nextCoreIds ps
+    i <- newChan host 0 ichs
+    o <- foldParZ ochs i next ps $ \ chs i c n p -> do
+        o <- newChan c n chs
+        onHost $ onCore c $ translate (p >> return ()) (readChan i) (writeChan o)
+        return o
+    onHost $ do
+        continue <- initRef true
+        while (getRef continue) $ do
+            (x, dontStop) <- inp
+            writeChan i x
+            -- TODO: run source invocation in a separate thread of host
+            iff dontStop
+                (do x <- readChan o
+                    dontStop <- out x
+                    iff dontStop
+                        (return ())
+                        (setRef continue false))
+                (setRef continue false)
 
+
+foldParZ :: (Monad m, Transferable inp, Transferable out)
+         => SizeSpec out
+         -> c inp
+         -> CoreIdTree
+         -> MulticoreZ inp out
+         -> (forall inp out a. (Transferable inp, Transferable out)
+             => SizeSpec out -> c inp -> CoreId -> CoreId -> CoreZ inp out -> m (c out))
+         -> m (c out)
+foldParZ chs acc (One n)     (OnCore  p c)   f = f chs acc c n p
+foldParZ chs acc (Two na nb) (Connect s a b) f = do
+    acc' <- foldParZ s acc na a f
+    foldParZ chs acc' nb b f
+
+
+data CoreIdTree = One CoreId | Two CoreIdTree CoreIdTree deriving Show
+
+nextCoreIds :: MulticoreZ inp out -> CoreIdTree
+nextCoreIds p = rebuild tree $ shift $ ids $ tree
+  where
+    tree = create p
+
+create :: MulticoreZ inp out -> CoreIdTree
+create (OnCore  _ c)   = One c
+create (Connect _ a b) = Two (create a) (create b)
+
+ids :: CoreIdTree -> [CoreId]
+ids (One c)   = [c]
+ids (Two a b) = ids a ++ ids b
+
+shift :: [CoreId] -> [CoreId]
+shift (_:cs) = cs ++ [host]
+
+rebuild :: CoreIdTree -> [CoreId] -> CoreIdTree
+rebuild (One _)  [c] = One c
+rebuild (Two a b) cs =
+    let (as, bs) = Prelude.splitAt (count a) cs
+    in  Two (rebuild a as) (rebuild b bs)
+
+count :: CoreIdTree -> Int
+count (One _)   = 1
+count (Two a b) = count a + count b

@@ -23,6 +23,15 @@ class ArrayWrapper arr => ArrayAccess arr m
 
 
 --------------------------------------------------------------------------------
+-- Busy waiting
+--------------------------------------------------------------------------------
+
+class Wait m
+  where
+    busyWait :: m ()
+
+
+--------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
 
@@ -49,6 +58,11 @@ forever :: CoreComp () -> CoreComp ()
 forever = while (return $ true)
 
 
+instance Wait CoreComp
+  where
+    busyWait = CoreComp $ singleInj BusyWait
+
+
 --------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
@@ -66,6 +80,11 @@ instance ArrayAccess SharedArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
     readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
+
+
+instance Wait Host
+  where
+    busyWait = Host $ singleInj BusyWait
 
 
 --------------------------------------------------------------------------------

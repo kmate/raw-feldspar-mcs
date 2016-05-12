@@ -4,6 +4,9 @@ import qualified GeneralPipes
 import qualified Pipes
 import qualified Simple
 import qualified Shared
+import qualified ZeldsparFFT
+import qualified ZeldsparSimple
+import qualified ZeldsparVector
 
 main = do
     BulkPipes.testAll
@@ -12,3 +15,6 @@ main = do
     Pipes.testAll
     Simple.testAll
     Shared.testAll
+    ZeldsparFFT.testAll
+    ZeldsparSimple.testAll
+    ZeldsparVector.testAll
