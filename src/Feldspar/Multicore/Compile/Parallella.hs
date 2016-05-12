@@ -16,6 +16,7 @@ import Feldspar.Multicore.Representation
 import Feldspar.Primitive.Representation
 import Feldspar.Representation
 import Feldspar.Run hiding ((==), (.|.), mod)
+import Feldspar.Run.Concurrent
 import Feldspar.Run.Compile
 import Feldspar.Run.Representation
 
@@ -141,11 +142,11 @@ instance Interp Imp.ControlCMD RunGen (Param2 Data PrimType')
   where interp = compControlCMD
 
 
-compWaitCMD :: Monad m => WaitCMD (Param3 m exp pred) a -> m a
-compWaitCMD BusyWait = return ()
+compHostWaitCMD :: WaitCMD (Param3 RunGen exp pred) a -> RunGen a
+compHostWaitCMD BusyWait = lift $ delayThread (100 :: Data Int32)
 
 instance Interp WaitCMD RunGen (Param2 exp pred)
-  where interp = compWaitCMD
+  where interp = compHostWaitCMD
 
 
 compLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 RunGen exp pred) a -> RunGen a
@@ -282,8 +283,11 @@ instance Interp Imp.ControlCMD CoreGen (Param2 Data PrimType')
   where interp = compControlCMD
 
 
+compCoreWaitCMD :: Monad m => WaitCMD (Param3 m exp pred) a -> m a
+compCoreWaitCMD BusyWait = return ()
+
 instance Interp WaitCMD CoreGen (Param2 exp pred)
-  where interp = compWaitCMD
+  where interp = compCoreWaitCMD
 
 
 compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 CoreGen exp pred) a -> CoreGen a
