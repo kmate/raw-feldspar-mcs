@@ -271,8 +271,8 @@ mkArrayDecl coreId name = do
             | coreId' == coreId = addr
             | otherwise = addr `toGlobal` coreId'
     return $ if coreId' == sharedId
-       then [cedecl| void * const $id:name = (void *)$addr; |]
-       else [cedecl| $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
+       then [cedecl| volatile void * const $id:name = (void *)$addr; |]
+       else [cedecl| volatile $ty:ty * const $id:name = ($ty:ty *)$addr'; |]
 
 
 --------------------------------------------------------------------------------
