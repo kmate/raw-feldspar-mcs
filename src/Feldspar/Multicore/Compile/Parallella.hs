@@ -305,15 +305,17 @@ compCoreLocalCopy :: PrimType a => String
 compCoreLocalCopy op spm ram offset (lower, upper) = do
     groupAddr <- asks group
     (r, c) <- asks $ groupCoordsForName (arrayRefName spm)
-    lift $ addInclude "<string.h>"
-    lift $ addInclude "<e-feldspar.h>"
-    lift $ callProc op
-        [ arrArg (unwrapArr spm)
-        , arrArg ram
-        , valArg offset
-        , valArg lower
-        , valArg upper
-        ]
+    lift $ do
+        addInclude "<string.h>"
+        addInclude "<e-lib.h>"
+        addInclude "<e-feldspar.h>"
+        callProc op
+            [ arrArg (unwrapArr spm)
+            , arrArg ram
+            , valArg offset
+            , valArg lower
+            , valArg upper
+            ]
 
 
 compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) (Param3 CoreGen exp pred) a -> CoreGen a
@@ -330,15 +332,16 @@ compCoreSharedCopy :: PrimType a => String
                    -> Data Index -> IndexRange -> CoreGen ()
 compCoreSharedCopy op spm ram offset (lower, upper) = do
     shmRef <- asks $ shmRefForName $ arrayRefName spm
-    lift $ addInclude "<e-lib.h>"
-    lift $ addInclude "<e-feldspar.h>"
-    lift $ callProc op
-        [ arrArg (unwrapArr spm)
-        , arrArg ram
-        , valArg offset
-        , valArg lower
-        , valArg upper
-        ]
+    lift $ do
+        addInclude "<e-lib.h>"
+        addInclude "<e-feldspar.h>"
+        callProc op
+            [ arrArg (unwrapArr spm)
+            , arrArg ram
+            , valArg offset
+            , valArg lower
+            , valArg upper
+            ]
 
 
 --------------------------------------------------------------------------------
