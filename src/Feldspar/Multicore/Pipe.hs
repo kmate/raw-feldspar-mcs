@@ -193,7 +193,8 @@ pushPipe pipe (lower, upper) src = do
 --------------------------------------------------------------------------------
 
 mod' :: (PrimType a, Integral a) => Data a -> Data a -> Data a
-a `mod'` m = (a < m) ? a $ a - m
+a `mod'` m = share m $ \m -> (a < m) ? a $ (a - m)
+-- share prevents a buggy constant folding (underflowing negative for unsigned)
 
 
 --------------------------------------------------------------------------------
