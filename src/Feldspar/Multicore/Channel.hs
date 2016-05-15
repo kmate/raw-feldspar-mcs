@@ -1,6 +1,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Feldspar.Multicore.Channel where
 
+import Data.Proxy
+
 import Feldspar hiding ((==))
 import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Pipe
@@ -32,11 +34,29 @@ data Chan a
                    -> CorePipe (ChanElemType a)
                    -> Chan a
 
-class ChanType a
+class PrimType (ChanElemType a) => ChanType a
   where
     type ChanElemType a :: *
     type SizeSpec a :: *
+
     newChan :: CoreId -> CoreId -> SizeSpec a -> Multicore (Chan a)
+    newChan from to s
+        | host == from = do
+            p :: HostToCorePipe (ChanElemType a) <- allocHostPipe to l
+            onHost $ initPipe p
+            return $ HostToCoreChan s p
+        | host == to   = do
+            p :: CoreToHostPipe (ChanElemType a) <- allocHostPipe from l
+            onHost $ initPipe p
+            return $ CoreToHostChan s p
+        | otherwise = do
+            p <- allocCorePipe from to l
+            onHost $ initPipe p
+            return $ CoreToCoreChan s p
+        where
+            l = pipeSize (Proxy :: Proxy a) s
+
+    pipeSize :: proxy a -> SizeSpec a -> Length
 
 class ChanType a => Transferable' m a
   where
@@ -61,19 +81,8 @@ instance PrimType a => ChanType (Data a)
   where
     type ChanElemType (Data a) = a
     type SizeSpec (Data a)     = Length
-    newChan from to l
-        | host == from = do
-            p :: HostToCorePipe a <- allocHostPipe to l
-            onHost $ initPipe p
-            return $ HostToCoreChan l p
-        | host == to   = do
-            p :: CoreToHostPipe a <- allocHostPipe from l
-            onHost $ initPipe p
-            return $ CoreToHostChan l p
-        | otherwise = do
-            p <- allocCorePipe from to l
-            onHost $ initPipe p
-            return $ CoreToCoreChan l p
+    pipeSize _ = id
+
 
 instance PrimType a => Transferable' Host (Data a)
   where
@@ -99,21 +108,7 @@ instance PrimType a => ChanType (Vector (Data a))
   where
     type ChanElemType (Vector (Data a)) = a
     type SizeSpec     (Vector (Data a)) = VecChanSizeSpec
-    newChan from to s@(VecChanSizeSpec n m)
-        | host == from = do
-            p :: HostToCorePipe a <- allocHostPipe to l
-            onHost $ initPipe p
-            return $ HostToCoreChan s p
-        | host == to   = do
-            p :: CoreToHostPipe a <- allocHostPipe from l
-            onHost $ initPipe p
-            return $ CoreToHostChan s p
-        | otherwise = do
-            p <- allocCorePipe from to l
-            onHost $ initPipe p
-            return $ CoreToCoreChan s p
-      where
-        l = n * m
+    pipeSize _ (VecChanSizeSpec n m) = n * m
 
 
 instance PrimType a => Transferable' Host (Vector (Data a))
