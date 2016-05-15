@@ -1,5 +1,6 @@
 module Zeldspar.Multicore.Compile where
 
+import Feldspar.Run.Concurrent (waitThread)
 import Feldspar.Multicore
 import Feldspar.Multicore.Representation hiding (OnCore)
 
@@ -19,21 +20,24 @@ translatePar ps inp ichs out ochs = do
     i <- newChan host 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
         o <- newChan c n chs
-        onHost $ onCore c $ translate (p >> return ()) (readChan i) (writeChan o)
+        onHost $ onCore c $ translate (void p) (readChan i) (writeChan o)
         return o
     onHost $ do
+        -- Read from output channel, shove output into sink
+        outThread <- forkWithId $ \t -> do
+            continue <- initRef true
+            while (getRef continue) $ do
+                x <- readChan o
+                dontStop <- out x
+                setRef continue dontStop
+
+        -- Read from source, shove into input channel
         continue <- initRef true
         while (getRef continue) $ do
             (x, dontStop) <- inp
             writeChan i x
-            -- TODO: run source invocation in a separate thread of host
-            iff dontStop
-                (do x <- readChan o
-                    dontStop <- out x
-                    iff dontStop
-                        (return ())
-                        (setRef continue false))
-                (setRef continue false)
+            setRef continue dontStop
+        lift $ waitThread outThread
 
 
 foldParZ :: (Monad m, Transferable inp, Transferable out)

@@ -12,6 +12,7 @@ import Feldspar.Run
 import Feldspar.Run.Concurrent
 import Feldspar.Run.Representation
 
+import qualified Language.Embedded.Concurrent.CMD as Imp
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
@@ -148,6 +149,7 @@ instance HFunctor MulticoreCMD
 
 
 type HostCMD = Imp.ControlCMD
+           :+: Imp.ThreadCMD
            :+: WaitCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
@@ -182,6 +184,14 @@ runControlRunCMD (Imp.While cond body) = while cond body
 
 instance Interp Imp.ControlCMD Run (Param2 Data PrimType')
   where interp = runControlRunCMD
+
+
+runThreadCMD :: Imp.ThreadCMD (Param3 Run Data PrimType') a -> Run a
+runThreadCMD (Imp.ForkWithId p) = forkWithId p
+
+instance Interp Imp.ThreadCMD Run (Param2 Data PrimType')
+  where interp = runThreadCMD
+
 
 instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run (Param2 exp pred)
   where interp = runBulkArrCMD

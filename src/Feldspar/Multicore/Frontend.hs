@@ -5,6 +5,8 @@ import Control.Monad.Operational.Higher
 import Feldspar
 import Feldspar.Multicore.Representation
 
+import Language.Embedded.Concurrent as Imp
+
 
 --------------------------------------------------------------------------------
 -- Bulk array frontend
@@ -85,6 +87,10 @@ instance ArrayAccess SharedArr Host
 instance Wait Host
   where
     busyWait = Host $ singleInj BusyWait
+
+
+forkWithId :: (ThreadId -> Host ()) -> Host ThreadId
+forkWithId = Host . Imp.forkWithId . (unHost .)
 
 
 --------------------------------------------------------------------------------

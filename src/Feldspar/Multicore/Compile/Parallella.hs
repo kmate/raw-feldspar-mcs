@@ -25,6 +25,7 @@ import qualified Language.C.Quote as C
 import qualified Language.C.Quote.C as C
 import qualified Language.C.Syntax as C
 import Language.Embedded.Backend.C.Expression
+import qualified Language.Embedded.Concurrent.CMD as Imp
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
@@ -140,6 +141,16 @@ compControlCMD (Imp.While cond body) = do
 
 instance Interp Imp.ControlCMD RunGen (Param2 Data PrimType')
   where interp = compControlCMD
+
+
+compThreadCMD :: Imp.ThreadCMD (Param3 RunGen Data PrimType') a -> RunGen a
+compThreadCMD (Imp.ForkWithId p) = do
+    s <- genState
+    let p' = evalGen s . p
+    fromRun $ forkWithId p'
+
+instance Interp Imp.ThreadCMD RunGen (Param2 Data PrimType')
+  where interp = compThreadCMD
 
 
 compHostWaitCMD :: WaitCMD (Param3 RunGen exp pred) a -> RunGen a
