@@ -89,34 +89,30 @@ class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
     getElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously reads multiple elements from a pipe.
---   Immediately returns the number of elements read,
---   when the pipe is not empty.
+--   Immediately returns the number of elements read.
 pullPipeA :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pullPipeA pipe (lower, upper) dst = do
-    -- wait for items in the buffer
-    while (do
-        rx <- getCReadPtr pipe
-        wx <- getCWritePtr pipe
-        return $ rx == wx) $ busyWait
     -- calculate items left
     let left = upper - lower + 1
-    -- how many items could it read in this round
+    -- how many items could it read in this call
     rx <- getCReadPtr pipe
     wx <- getCWritePtr pipe
     size <- force $ getSize pipe
     available <- force $ (size + wx -rx) `mod'` size
     toRead <- force $ min left available
     let start = lower
-    iff (rx + toRead <= size)
-        (getElements pipe rx (start, start + toRead - 1) dst)
-        (do toEnd <- force $ size - rx
-            getElements pipe rx (start, start + toEnd - 1) dst
-            start' <- force $ start + toEnd
-            getElements pipe 0 (start', start' + toRead - toEnd - 1) dst)
-    rx' <- force $ (rx + toRead) `mod'` size
-    setReadPtr pipe rx'
-    return toRead
+    ifE (toRead > 0)
+        (do iff (rx + toRead <= size)
+                (getElements pipe rx (start, start + toRead - 1) dst)
+                (do toEnd <- force $ size - rx
+                    getElements pipe rx (start, start + toEnd - 1) dst
+                    start' <- force $ start + toEnd
+                    getElements pipe 0 (start', start' + toRead - toEnd - 1) dst)
+            rx' <- force $ (rx + toRead) `mod'` size
+            setReadPtr pipe rx'
+            return toRead)
+        (return 0)
 
 -- | Synchronously reads multple elements from a pipe.
 --   Blocks until all the elements in the given range are read.
@@ -128,8 +124,8 @@ pullPipe pipe (lower, upper) dst = do
     -- until all data is read
     while ((<total) <$> getRef read) $ do
         done <- getRef read
-        toRead <- pullPipeA pipe (lower + done, upper) dst
-        setRef read (done + toRead)
+        readNow <- pullPipeA pipe (lower + done, upper) dst
+        iff (0 == readNow) busyWait (setRef read (done + readNow))
     -- reset pointers for performance if needed
     rx <- getCReadPtr  pipe
     wx <- getCWritePtr pipe
@@ -144,35 +140,31 @@ class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
     setElements :: PrimType a => p a -> Data Index -> IndexRange -> Arr a -> m ()
 
 -- | Asynchronously writes multiple elements into a pipe.
---   Immediately returns the number of elements written,
---   when the pipe is not full.
+--   Immediately returns the number of elements written.
 pushPipeA :: (Pipe p, Wait m, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m (Data Index)
 pushPipeA pipe (lower, upper) src = do
-    let size = getSize pipe
-    -- wait for empty space in the buffer
-    while (do
-        rx <- getPReadPtr  pipe
-        wx <- getPWritePtr pipe
-        return $ (wx + 1) `mod'` size == rx) $ busyWait
     -- calculate items left
     let left = upper - lower + 1
-    -- how many items could be writen in this round
+    -- how many items could be writen in this call
     rx <- getPReadPtr  pipe
     wx <- getPWritePtr pipe
+    size <- force $ getSize pipe
     available <- force $ (size + wx - rx) `mod'` size
     empty <- force $ size - available - 1  -- one slot is reserved in this setup
     toWrite <- force $ min left empty
     let start = lower
-    iff (wx + toWrite <= size)
-        (setElements pipe wx (start, start + toWrite - 1) src)
-        (do toEnd <- force $ size - wx
-            setElements pipe wx (start, start + toEnd - 1) src
-            start' <- force $ start + toEnd
-            setElements pipe 0 (start', start' + (toWrite - toEnd) - 1) src)
-    wx' <- force $ (wx + toWrite) `mod'` size
-    setWritePtr pipe wx'
-    return toWrite
+    ifE (toWrite > 0)
+        (do iff (wx + toWrite <= size)
+                (setElements pipe wx (start, start + toWrite - 1) src)
+                (do toEnd <- force $ size - wx
+                    setElements pipe wx (start, start + toEnd - 1) src
+                    start' <- force $ start + toEnd
+                    setElements pipe 0 (start', start' + (toWrite - toEnd) - 1) src)
+            wx' <- force $ (wx + toWrite) `mod'` size
+            setWritePtr pipe wx'
+            return toWrite)
+        (return 0)
 
 -- | Synchronously writes multiple elements into a pipe.
 --   Blcoks untipl all the elements in the given range are written.
@@ -184,8 +176,8 @@ pushPipe pipe (lower, upper) src = do
     -- until all data is written
     while ((<total) <$> getRef written) $ do
         done <- getRef written
-        toWrite <- pushPipeA pipe (lower + done, upper) src
-        setRef written (done + toWrite)
+        writtenNow <- pushPipeA pipe (lower + done, upper) src
+        iff (0 == writtenNow) busyWait (setRef written (done + writtenNow))
 
 
 --------------------------------------------------------------------------------
