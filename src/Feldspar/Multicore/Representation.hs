@@ -109,10 +109,10 @@ newtype CoreCompT m a = CoreComp
     { unCoreComp :: ProgramT CoreCMD (Param2 Data PrimType') m a }
   deriving (Functor, Applicative, Monad, MonadTrans)
 
-type CoreComp = CoreCompT Run
+type CoreComp = CoreCompT Comp
 
 runCoreComp :: CoreComp a -> Run a
-runCoreComp = interpretT id . unCoreComp
+runCoreComp = interpretT (Run . lift . unComp) . unCoreComp
 
 
 instance MonadComp CoreComp where
