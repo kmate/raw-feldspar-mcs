@@ -239,7 +239,9 @@ moduleName = ("core" ++) . show
 compCore :: CoreId -> Run () -> RunGen ()
 compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
-    let (_, env) = cGen $ C.wrapMain $ interpret $ translate comp
+    let (_, env) = cGen $ do
+            addCoreSpecification coreId
+            C.wrapMain $ interpret $ translate comp
 
     -- collect pre-allocated local and shared arrays used by core main
     arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
@@ -449,6 +451,7 @@ shmRefForName :: Name -> RGState -> SharedMemRef
 shmRefForName name RGState{..}
     | Just shmRef <- Map.lookup name shmMap = shmRef
 
+
 --------------------------------------------------------------------------------
 -- Core compiler representation and utilities
 --------------------------------------------------------------------------------
@@ -478,6 +481,18 @@ isValidCoreId = flip elem [0..15]
 
 systemCoord :: CoreId -> CoreCoords
 systemCoord coreId = let (gr, gc) = groupCoord coreId in (gr + 32, gc + 8)
+
+addCoreSpecification :: CoreId -> C.CGen ()
+addCoreSpecification coreId = do
+    let (sr, sc) = systemCoord coreId
+        setRow   = "asm(\".set __CORE_ROW_," ++ show sr ++ "\");"
+        setCol   = "asm(\".set __CORE_COL_," ++ show sc ++ "\");"
+    C.addGlobal [cedecl| extern int _CORE_ROW_; |]
+    C.addGlobal [cedecl| $esc:("asm(\".global __CORE_ROW_\");") |]
+    C.addGlobal [cedecl| $esc:setRow |]
+    C.addGlobal [cedecl| extern int _CORE_COL_; |]
+    C.addGlobal [cedecl| $esc:("asm(\".global __CORE_COL_\");") |]
+    C.addGlobal [cedecl| $esc:setCol |]
 
 
 type GlobalAddress = Word32
