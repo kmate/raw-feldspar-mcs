@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module ZeldsparSimple where
 
 import qualified Prelude
@@ -26,7 +27,8 @@ inc = zmap (+1)
 twice :: CoreZ (Data Int32) (Data Int32) ()
 twice = zmap (*2)
 
-zmap :: (inp -> out) -> CoreZ inp out ()
+zmap :: (ZType inp CoreComp, ZType out CoreComp)
+     => (inp -> out) -> CoreZ inp out ()
 zmap f = loop $ do
     x <- receive
     emit (f x)

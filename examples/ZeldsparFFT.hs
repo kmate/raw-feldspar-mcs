@@ -10,7 +10,7 @@ type ComplexSamples  = Vector (Data (Complex Double))
 type Twiddles        = Vector (Data (Complex Double))
 
 
-flipFlop :: Storable a
+flipFlop :: (Transferable a, Storable a)
          => (Store a, Store a)
          -> [a -> a]
          -> CoreZ a a ()

@@ -7,8 +7,10 @@ import Zeldspar.Multicore
 
 vecInc :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a)) ()
 vecInc = loop $ do
-    v <- receive
-    emit (map (+1) v)
+    s <- receive'
+    v <- lift $ unsafeFreezeStore s
+    lift $ writeStore s (map (+1) v)
+    emit' s
 
 vecRev :: PrimType a => CoreZ (Vector (Data a)) (Vector (Data a)) ()
 vecRev = loop $ do

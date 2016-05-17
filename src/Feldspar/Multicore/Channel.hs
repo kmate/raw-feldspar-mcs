@@ -60,8 +60,11 @@ class PrimType (ChanElemType a) => ChanType a
 
 class ChanType a => Transferable' m a
   where
-    readChan :: Chan a -> m a
-    writeChan :: Chan a -> a -> m ()
+    type TransferType a :: *
+    toTransfer   :: a -> m (TransferType a)
+    fromTransfer :: TransferType a -> m a
+    readChan     :: Chan a -> m (TransferType a)
+    writeChan    :: Chan a -> TransferType a -> m ()
 
 class    (Transferable' Host a, Transferable' CoreComp a) => Transferable a
 instance (Transferable' Host a, Transferable' CoreComp a) => Transferable a
@@ -86,6 +89,9 @@ instance PrimType a => ChanType (Data a)
 
 instance PrimType a => Transferable' Host (Data a)
   where
+    type TransferType (Data a) = Data a
+    toTransfer   = return
+    fromTransfer = return
     readChan (CoreToHostChan _ p) = do
         arr <- newArr 1
         pullPipe p (0,0) arr
@@ -98,6 +104,9 @@ instance PrimType a => Transferable' Host (Data a)
 
 instance PrimType a => Transferable' CoreComp (Data a)
   where
+    type TransferType (Data a) = Data a
+    toTransfer   = return
+    fromTransfer = return
     readChan (HostToCoreChan _ p) = readPipe p
     readChan (CoreToCoreChan _ p) = readPipe p
     writeChan (CoreToHostChan _ p) v = writePipe v p
@@ -113,28 +122,33 @@ instance PrimType a => ChanType (Vector (Data a))
 
 instance PrimType a => Transferable' Host (Vector (Data a))
   where
+    type TransferType (Vector (Data a)) = Store (Vector (Data a))
+    toTransfer   = initStore
+    fromTransfer = unsafeFreezeStore
     readChan  (CoreToHostChan s p) = readChan'  s p
     writeChan (HostToCoreChan s p) = writeChan' s p
 
 instance PrimType a => Transferable' CoreComp (Vector (Data a))
   where
+    type TransferType (Vector (Data a)) = Store (Vector (Data a))
+    toTransfer   = initStore
+    fromTransfer = unsafeFreezeStore
     readChan  (HostToCoreChan s p) = readChan'  s p
     readChan  (CoreToCoreChan s p) = readChan'  s p
     writeChan (CoreToHostChan s p) = writeChan' s p
     writeChan (CoreToCoreChan s p) = writeChan' s p
 
 readChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeReader p m, PrimType a)
-          => VecChanSizeSpec -> p a -> m (Vector (Data a))
+          => VecChanSizeSpec -> p a -> m (Store (Vector (Data a)))
 readChan' (VecChanSizeSpec _ l) p = do
     let l' :: Data Length = value l
     arr <- newArr l'
     pullPipe p (0, l' - 1) arr
     lenRef :: Ref Length <- initRef l'
-    unsafeFreezeStore $ Store (lenRef, arr)
+    return $ Store (lenRef, arr)
 
 writeChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeWriter p m, PrimType a)
-           => VecChanSizeSpec -> p a -> Vector (Data a) -> m ()
-writeChan' (VecChanSizeSpec _ l) p v = do
+           => VecChanSizeSpec -> p a -> Store (Vector (Data a)) -> m ()
+writeChan' (VecChanSizeSpec _ l) p (Store (_, arr)) = do
     let l' :: Data Length = value l
-    Store (_, arr) <- initStore v
     pushPipe p (0, l' - 1) arr

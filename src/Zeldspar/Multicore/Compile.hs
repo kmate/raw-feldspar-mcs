@@ -28,14 +28,16 @@ runZ ps inp ichs out ochs = do
             continue <- initRef true
             while (getRef continue) $ do
                 x <- readChan o
-                dontStop <- out x
+                x' <- fromTransfer x
+                dontStop <- out x'
                 setRef continue dontStop
 
         -- Read from source, shove into input channel
         continue <- initRef true
         while (getRef continue) $ do
             (x, dontStop) <- inp
-            writeChan i x
+            x' <- toTransfer x
+            writeChan i x'
             setRef continue dontStop
         lift $ waitThread outThread
 
