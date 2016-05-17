@@ -13,7 +13,7 @@ type Twiddles        = Vector (Data (Complex Double))
 flipFlop :: Storable a
          => (Store a, Store a)
          -> [a -> a]
-         -> CoreZ a a
+         -> CoreZ a a ()
 flipFlop (a, b) fs = do
   let fs' = P.zip fs (P.cycle [(a, b), (b, a)])
       go _ (f, (src, dst)) = do
@@ -54,15 +54,15 @@ bitRev n = [ riffle k | k <- [1..P.floor (logBase 2 $ P.fromIntegral n) - 1] ]
 -- "Pull-style" parallel FFT
 --------------------------------------------------------------------------------
 
-fft :: Length -> CoreZ ComplexSamples ComplexSamples
+fft :: Length -> CoreZ ComplexSamples ComplexSamples ()
 fft = fftBase False
 
-ifft :: Length -> CoreZ ComplexSamples ComplexSamples
+ifft :: Length -> CoreZ ComplexSamples ComplexSamples ()
 ifft = fftBase True
 
 -- Fusion of a whole FFT is not possible for 'n' = 1024,
 -- so we store the internal result after each stage to the same store.
-fftBase :: Bool ->  Length -> CoreZ ComplexSamples ComplexSamples
+fftBase :: Bool ->  Length -> CoreZ ComplexSamples ComplexSamples ()
 fftBase inv n = do
   core <- lift $ fftCore inv n
   let rev = bitRev n

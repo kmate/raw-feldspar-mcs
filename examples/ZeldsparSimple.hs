@@ -20,13 +20,13 @@ simple = do
     writeOutput :: Data Int32 -> Host (Data Bool)
     writeOutput o = printf "> %d\n" o >> return true
 
-inc :: CoreZ (Data Int32) (Data Int32)
+inc :: CoreZ (Data Int32) (Data Int32) ()
 inc = zmap (+1)
 
-twice :: CoreZ (Data Int32) (Data Int32)
+twice :: CoreZ (Data Int32) (Data Int32) ()
 twice = zmap (*2)
 
-zmap :: (inp -> out) -> CoreZ inp out
+zmap :: (inp -> out) -> CoreZ inp out ()
 zmap f = loop $ do
     x <- receive
     emit (f x)

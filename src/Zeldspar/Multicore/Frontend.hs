@@ -8,7 +8,7 @@ import Feldspar.Multicore.Representation hiding (OnCore)
 import Zeldspar.Multicore.Representation
 
 
-on :: CoreZ inp out -> CoreId -> MulticoreZ inp out
+on :: CoreZ inp out a -> CoreId -> MulticoreZ inp out a
 on = OnCore
 
 -- | Parallel composition of Ziria programs. It should be used in conjunction
@@ -16,15 +16,15 @@ on = OnCore
 --   middle, for example 'a |>>n>>| b' composes 'a' and 'b' through a channel of
 --   size 'n'.
 (|>>) :: Transferable mid
-      => MulticoreZ inp mid
+      => MulticoreZ inp mid a
       -> SizeSpec mid
-      -> (MulticoreZ mid out -> MulticoreZ inp out)
+      -> (MulticoreZ mid out b -> MulticoreZ inp out ())
 l |>> len = Connect len l
 
-(>>|) :: (MulticoreZ mid out -> MulticoreZ inp out)
-      -> MulticoreZ mid out
-      -> MulticoreZ inp out
-connP >>| r = connP r
+(>>|) :: (MulticoreZ mid out a -> MulticoreZ inp out ())
+      -> MulticoreZ mid out a
+      -> MulticoreZ inp out ()
+(>>|) = ($)
 
 infixl 1 |>>
 infixl 1 >>|

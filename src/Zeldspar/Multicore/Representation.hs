@@ -6,9 +6,12 @@ import Feldspar.Multicore.Representation
 import Ziria
 
 
-type CoreZ inp out = Z inp out CoreComp ()
+type CoreZ inp out a = Z inp out CoreComp a
 
-data MulticoreZ inp out
-  = OnCore (CoreZ inp out) CoreId
-  | forall mid. Transferable mid
-  => Connect (SizeSpec mid) (MulticoreZ inp mid) (MulticoreZ mid out)
+data MulticoreZ inp out a where
+  OnCore  :: CoreZ inp out a -> CoreId -> MulticoreZ inp out a
+  Connect :: Transferable mid
+          => SizeSpec mid
+          -> MulticoreZ inp mid b
+          -> MulticoreZ mid out c
+          -> MulticoreZ inp out ()

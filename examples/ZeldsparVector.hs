@@ -5,12 +5,12 @@ import qualified Prelude
 import Zeldspar.Multicore
 
 
-vecInc :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a))
+vecInc :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a)) ()
 vecInc = loop $ do
     v <- receive
     emit (map (+1) v)
 
-vecRev :: PrimType a => CoreZ (Vector (Data a)) (Vector (Data a))
+vecRev :: PrimType a => CoreZ (Vector (Data a)) (Vector (Data a)) ()
 vecRev = loop $ do
     v <- receive
     emit (reverse v)

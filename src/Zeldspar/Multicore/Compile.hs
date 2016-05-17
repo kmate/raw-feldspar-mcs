@@ -8,8 +8,8 @@ import Zeldspar (translate)
 import Zeldspar.Multicore.Representation
 
 
-translatePar :: forall inp out. (Transferable inp, Transferable out)
-             => MulticoreZ inp out
+translatePar :: forall inp out a. (Transferable inp, Transferable out)
+             => MulticoreZ inp out a
              -> (Host (inp, Data Bool))    -- ^ Source
              -> SizeSpec inp               -- ^ Source channel size
              -> (out -> Host (Data Bool))  -- ^ Sink
@@ -44,9 +44,9 @@ foldParZ :: (Monad m, Transferable inp, Transferable out)
          => SizeSpec out
          -> c inp
          -> CoreIdTree
-         -> MulticoreZ inp out
+         -> MulticoreZ inp out a
          -> (forall inp out a. (Transferable inp, Transferable out)
-             => SizeSpec out -> c inp -> CoreId -> CoreId -> CoreZ inp out -> m (c out))
+             => SizeSpec out -> c inp -> CoreId -> CoreId -> CoreZ inp out a -> m (c out))
          -> m (c out)
 foldParZ chs acc (One n)     (OnCore  p c)   f = f chs acc c n p
 foldParZ chs acc (Two na nb) (Connect s a b) f = do
@@ -56,12 +56,12 @@ foldParZ chs acc (Two na nb) (Connect s a b) f = do
 
 data CoreIdTree = One CoreId | Two CoreIdTree CoreIdTree deriving Show
 
-nextCoreIds :: MulticoreZ inp out -> CoreIdTree
+nextCoreIds :: MulticoreZ inp out a -> CoreIdTree
 nextCoreIds p = rebuild tree $ shift $ ids $ tree
   where
     tree = create p
 
-create :: MulticoreZ inp out -> CoreIdTree
+create :: MulticoreZ inp out a -> CoreIdTree
 create (OnCore  _ c)   = One c
 create (Connect _ a b) = Two (create a) (create b)
 
