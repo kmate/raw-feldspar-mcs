@@ -17,7 +17,7 @@ vecRev = loop $ do
 
 
 vector :: Multicore ()
-vector = translatePar
+vector = runZ
     (vecInc `on` 0 |>>chanSize>>| vecRev `on` 1)
     readInput
     chanSize

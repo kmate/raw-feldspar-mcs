@@ -124,7 +124,7 @@ testFFT inputFile = do
             setArr i (complex re im) input
         inp <- unsafeFreezeVec (value n) input
         return (h, inp)
-    translatePar
+    runZ
         (fft n `on` 0)
         (return (inp, true))
         chanSize

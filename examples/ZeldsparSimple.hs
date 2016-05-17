@@ -8,7 +8,7 @@ import Zeldspar.Multicore
 simple :: Multicore ()
 simple = do
     let chanSize = 10
-    translatePar
+    runZ
         (inc `on` 0 |>>chanSize>>| twice `on` 1)
         readInput
         chanSize

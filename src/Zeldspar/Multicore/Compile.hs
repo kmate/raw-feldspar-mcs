@@ -8,14 +8,14 @@ import Zeldspar (translate)
 import Zeldspar.Multicore.Representation
 
 
-translatePar :: forall inp out a. (Transferable inp, Transferable out)
-             => MulticoreZ inp out a
-             -> (Host (inp, Data Bool))    -- ^ Source
-             -> SizeSpec inp               -- ^ Source channel size
-             -> (out -> Host (Data Bool))  -- ^ Sink
-             -> SizeSpec out               -- ^ Sink channel size
-             -> Multicore ()
-translatePar ps inp ichs out ochs = do
+runZ :: forall inp out a. (Transferable inp, Transferable out)
+     => MulticoreZ inp out a
+     -> (Host (inp, Data Bool))    -- ^ Source
+     -> SizeSpec inp               -- ^ Source channel size
+     -> (out -> Host (Data Bool))  -- ^ Sink
+     -> SizeSpec out               -- ^ Sink channel size
+     -> Multicore ()
+runZ ps inp ichs out ochs = do
     let next = nextCoreIds ps
     i <- newChan host 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
