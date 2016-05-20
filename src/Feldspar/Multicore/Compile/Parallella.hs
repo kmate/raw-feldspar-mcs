@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Feldspar.Multicore.Compile.Parallella where
@@ -236,12 +237,38 @@ instance Interp MulticoreCMD RunGen (Param2 exp pred)
 moduleName :: CoreId -> String
 moduleName = ("core" ++) . show
 
+
+type TargetPrams = '(Program TargetCMD (Param2 Prim PrimType'), Param2 Prim PrimType')
+
+alignArrays :: ProgC a -> ProgC a
+alignArrays = go . view
+  where
+    go :: ProgramView TargetCMD (Param2 Prim PrimType') a -> ProgC a
+    go (Return x) = unview (Return x)
+    go (x :>>= y) = unview (align (traverse x) :>>= \r -> go (view (y r)))
+
+    traverse :: forall a. TargetCMD TargetPrams a -> TargetCMD TargetPrams a
+    traverse x = case (prj x :: Maybe (Imp.ControlCMD TargetPrams a)) of
+        Just (Imp.If cond t f)     -> inj $ Imp.If cond (alignArrays t) (alignArrays f)
+        Just (Imp.For range body)  -> inj $ Imp.For range (\i -> alignArrays (body i))
+        Just (Imp.While cond body) -> inj $ Imp.While (alignArrays cond) (alignArrays body)
+        _ -> x
+
+    align :: forall a. TargetCMD TargetPrams a -> TargetCMD TargetPrams a
+    align x = case (prj x :: Maybe (Imp.ArrCMD TargetPrams a)) of
+        Just (Imp.NewArr base _ len) -> inj $ Imp.NewArr base (al) len
+        Just (Imp.InitArr base _ as) -> inj $ Imp.InitArr base al as
+        _ -> x
+      where
+        al :: forall i. Integral i => Maybe i
+        al = Just $ fromIntegral dmaAlign
+
 compCore :: CoreId -> Run () -> RunGen ()
 compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
     let (_, env) = cGen $ do
             addCoreSpecification coreId
-            C.wrapMain $ interpret $ translate comp
+            C.wrapMain $ interpret $ alignArrays $ translate comp
 
     -- collect pre-allocated local and shared arrays used by core main
     arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
@@ -429,7 +456,7 @@ allocate coreId size s@RGState{..} = ((startAddr, newName), s
     addAddr (Just addrs@((_, next, _):_)) = (next, next + size', newName) : addrs
     addAddr _ = [(baseAddr, baseAddr + size', newName)]
     baseAddr = if isShared then sharedBase else bank1Base
-    size' = wordAlign size
+    size' = aligned size
 
 describes :: Name -> SharedMemRef -> RGState -> RGState
 describes name shmAddr s = s { shmMap = Map.insert name shmAddr (shmMap s) }
@@ -505,11 +532,14 @@ toGlobal addr coreId
                   -- 6 bit row number, 6 bit column number, 20 bit local address
                   in (sr `shift` 26) .|. (sc `shift` 20) .|. addr
 
-wordAlign :: LocalAddress -> LocalAddress
-wordAlign addr
+aligned :: LocalAddress -> LocalAddress
+aligned addr
     | m == 0 = addr
-    | otherwise = addr - m + 4
-    where m = addr `mod` 4
+    | otherwise = addr - m + dmaAlign
+    where m = addr `mod` dmaAlign
+
+dmaAlign :: Word32
+dmaAlign = 16
 
 bank1Base :: LocalAddress  -- local in the address space of a core
 bank1Base = 0x2000
