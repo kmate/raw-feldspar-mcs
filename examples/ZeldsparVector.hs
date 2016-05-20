@@ -5,12 +5,30 @@ import qualified Prelude
 import Zeldspar.Multicore
 
 
-vecInc :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a)) ()
+vecInc :: (PrimType a, Num a) => CoreZ (Store (Vector (Data a))) (Store (Vector (Data a))) ()
 vecInc = loop $ do
-    s <- receive'
+    s <- receive
     v <- lift $ unsafeFreezeStore s
     lift $ writeStore s (map (+1) v)
-    emit' s
+    emit s
+
+vecInc' :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Store (Vector (Data a))) ()
+vecInc' = loop $ do
+    v <- receive
+    s <- lift $ initStore (map (+1) v)
+    emit s
+
+vecInc'' :: (PrimType a, Num a) => CoreZ (Store (Vector (Data a))) (Vector (Data a)) ()
+vecInc'' = loop $ do
+    s <- receive
+    v <- lift $ unsafeFreezeStore s
+    emit (map (+1) v)
+
+
+vecTwice :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a)) ()
+vecTwice = loop $ do
+    v <- receive
+    emit $ map (*2) v
 
 vecRev :: PrimType a => CoreZ (Vector (Data a)) (Vector (Data a)) ()
 vecRev = loop $ do
@@ -20,7 +38,10 @@ vecRev = loop $ do
 
 vector :: Multicore ()
 vector = runZ
-    (vecInc `on` 0 |>>chanSize>>| vecRev `on` 1)
+    ((vecInc `on` 0) |>>chanSize>>|
+     (vecInc' `on` 1) |>>chanSize>>|
+     (vecInc'' `on` 2) |>>chanSize>>|
+     (vecTwice >>> vecRev) `on` 3)
     readInput
     chanSize
     writeOutput

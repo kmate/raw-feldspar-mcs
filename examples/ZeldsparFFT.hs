@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module ZeldsparFFT where
 
 import qualified Prelude as P
@@ -10,10 +11,10 @@ type ComplexSamples  = Vector (Data (Complex Double))
 type Twiddles        = Vector (Data (Complex Double))
 
 
-flipFlop :: (Transferable a, Storable a)
-         => (Store a, Store a)
-         -> [a -> a]
-         -> CoreZ a a ()
+flipFlop :: (Transferable a, TransferType CoreComp a' a, Storable a')
+         => (Store a', Store a')
+         -> [a' -> a']
+         -> CoreZ a' a' ()
 flipFlop (a, b) fs = do
   let fs' = P.zip fs (P.cycle [(a, b), (b, a)])
       go _ (f, (src, dst)) = do
@@ -102,27 +103,18 @@ testBit :: (Bits a, Num a, PrimType a) => Data a -> Data Index -> Data Bool
 testBit a i = a .&. (1 .<<. i2n i) /= 0
 
 
-{-
-fft :: (RealFloat a, PrimType (Complex a))
-    => Length
-    -> CoreZ (Vector (Data (Complex a))) (Vector (Data (Complex a)))
-fft n = loop $ do
-    input <- receive
-    emit $ map (+1) input
--}
-
 testFFT :: String -> Multicore ()
 testFFT inputFile = do
     let n = 8
         chanSize = 10 `ofLength` n
     (h, inp) <- onHost $ do
         h <- liftHost $ fopen inputFile ReadMode
-        input :: Arr (Complex Double) <- newArr (value n)
+        input <- newArr (value n)
         for (0, 1, Excl $ value n) $ \i -> do
             re :: Data Double <- liftHost $ fget h
             im :: Data Double <- liftHost $ fget h
             setArr i (complex re im) input
-        inp <- unsafeFreezeVec (value n) input
+        inp :: Vector (Data (Complex Double)) <- unsafeFreezeVec (value n) input
         return (h, inp)
     runZ
         (fft n `on` 0)

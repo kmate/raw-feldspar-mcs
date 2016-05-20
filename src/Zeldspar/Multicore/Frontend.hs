@@ -7,9 +7,16 @@ import Feldspar.Multicore.Channel
 import Feldspar.Multicore.Representation hiding (OnCore)
 import Zeldspar.Multicore.Representation
 
+import Ziria (liftIn, liftOut)
 
-on :: CoreZ inp out a -> CoreId -> MulticoreZ inp out a
-on = OnCore
+
+on :: ( Transferable minp, TransferType CoreComp cinp minp
+      , Transferable mout, TransferType CoreComp cout mout )
+   => CoreZ cinp cout a
+   -> CoreId
+   -> MulticoreZ minp mout a
+on = OnCore . liftOut toTransfer . liftIn fromTransfer
+
 
 -- | Parallel composition of Ziria programs. It should be used in conjunction
 --   with (>>|) to create a mixfix operator with a channel size specifier in the
@@ -19,7 +26,7 @@ on = OnCore
       => MulticoreZ inp mid a
       -> SizeSpec mid
       -> (MulticoreZ mid out b -> MulticoreZ inp out ())
-l |>> len = Connect len l
+(|>>) = flip Connect
 
 (>>|) :: (MulticoreZ mid out a -> MulticoreZ inp out ())
       -> MulticoreZ mid out a

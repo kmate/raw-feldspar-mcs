@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
 module ZeldsparSimple where
 
 import qualified Prelude
@@ -21,14 +20,13 @@ simple = do
     writeOutput :: Data Int32 -> Host (Data Bool)
     writeOutput o = printf "> %d\n" o >> return true
 
-inc :: CoreZ (Data Int32) (Data Int32) ()
+inc :: (PrimType a, Num a) => CoreZ (Data a) (Data a) ()
 inc = zmap (+1)
 
-twice :: CoreZ (Data Int32) (Data Int32) ()
+twice :: (PrimType a, Num a) => CoreZ (Data a) (Data a) ()
 twice = zmap (*2)
 
-zmap :: (ZType inp CoreComp, ZType out CoreComp)
-     => (inp -> out) -> CoreZ inp out ()
+zmap :: (inp -> out) -> CoreZ inp out ()
 zmap f = loop $ do
     x <- receive
     emit (f x)
