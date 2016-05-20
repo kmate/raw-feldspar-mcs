@@ -3,7 +3,7 @@ module Zeldspar.Multicore
   , module Z
   ) where
 
-import Feldspar.Multicore as F hiding (lift, forever)
+import Feldspar.Multicore as F hiding (lift, foldM, forever)
 import Zeldspar.Multicore.Compile as Z
 import Zeldspar.Multicore.Frontend as Z
 import Zeldspar.Multicore.Representation as Z

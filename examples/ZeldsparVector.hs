@@ -5,32 +5,32 @@ import qualified Prelude
 import Zeldspar.Multicore
 
 
-vecInc :: (PrimType a, Num a) => CoreZ (Store (Vector (Data a))) (Store (Vector (Data a))) ()
+vecInc :: (PrimType a, Num a) => CoreZ (Store (DPull a)) (Store (DPull a)) ()
 vecInc = loop $ do
     s <- receive
     v <- lift $ unsafeFreezeStore s
-    lift $ writeStore s (map (+1) v)
+    lift $ writeStore s (fmap (+1) v)
     emit s
 
-vecInc' :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Store (Vector (Data a))) ()
+vecInc' :: (PrimType a, Num a) => CoreZ (DPull a) (Store (DPull a)) ()
 vecInc' = loop $ do
     v <- receive
-    s <- lift $ initStore (map (+1) v)
+    s <- lift $ initStore (fmap (+1) v)
     emit s
 
-vecInc'' :: (PrimType a, Num a) => CoreZ (Store (Vector (Data a))) (Vector (Data a)) ()
+vecInc'' :: (PrimType a, Num a) => CoreZ (Store (DPull a)) (DPull a) ()
 vecInc'' = loop $ do
     s <- receive
     v <- lift $ unsafeFreezeStore s
-    emit (map (+1) v)
+    emit (fmap (+1) v)
 
 
-vecTwice :: (PrimType a, Num a) => CoreZ (Vector (Data a)) (Vector (Data a)) ()
+vecTwice :: (PrimType a, Num a) => CoreZ (DPull a) (DPull a) ()
 vecTwice = loop $ do
     v <- receive
-    emit $ map (*2) v
+    emit $ fmap (*2) v
 
-vecRev :: PrimType a => CoreZ (Vector (Data a)) (Vector (Data a)) ()
+vecRev :: PrimType a => CoreZ (DPull a) (DPull a) ()
 vecRev = loop $ do
     v <- receive
     emit (reverse v)
@@ -49,7 +49,7 @@ vector = runZ
   where
     vecSize  = 5
     chanSize = 10`ofLength`vecSize
-    readInput :: Host (Vector (Data Int32), Data Bool)
+    readInput :: Host (DPull Int32, Data Bool)
     readInput = liftHost $ do
         input <- newArr $ value vecSize
         for (0, 1, Excl $ value vecSize) $ \i -> do
@@ -57,7 +57,7 @@ vector = runZ
             setArr i v input
         vec <- unsafeFreezeVec (value $ vecSize) input
         return (vec, true)
-    writeOutput :: Vector (Data Int32) -> Host (Data Bool)
+    writeOutput :: DPull Int32 -> Host (Data Bool)
     writeOutput o = do
         for (0, 1, Excl $ value vecSize) $ \i -> printf "> %d\n" (o ! i)
         return true

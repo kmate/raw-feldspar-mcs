@@ -4,10 +4,10 @@ module Feldspar.Multicore.Channel where
 import Data.Proxy
 
 import Feldspar hiding ((==))
+import Feldspar.Data.Vector hiding (ofLength, VecChanSizeSpec)
 import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Pipe
 import Feldspar.Multicore.Representation
-import Feldspar.Vector hiding (ofLength, VecChanSizeSpec)
 
 
 --------------------------------------------------------------------------------
@@ -72,7 +72,7 @@ class TransferType m a t | a -> t
     fromTransfer :: t -> m a
 
 
-ofLength :: Length -> Length -> SizeSpec (Store (Vector (Data a)))
+ofLength :: Length -> Length -> SizeSpec (Store (DPull a))
 ofLength = VecChanSizeSpec
 
 instance Num (SizeSpec (Data a))
@@ -119,36 +119,36 @@ instance (Monad m, PrimType a) => TransferType m (Data a) (Data a)
     fromTransfer = return
 
 
-instance PrimType a => ChanType (Store (Vector (Data a)))
+instance PrimType a => ChanType (Store (DPull a))
   where
-    type ChanElemType (Store (Vector (Data a))) = a
-    data SizeSpec     (Store (Vector (Data a))) = VecChanSizeSpec Length Length
+    type ChanElemType (Store (DPull a)) = a
+    data SizeSpec     (Store (DPull a)) = VecChanSizeSpec Length Length
     pipeSize _ (VecChanSizeSpec n m) = n * m
 
-instance PrimType a => Transferable' Host (Store (Vector (Data a)))
+instance PrimType a => Transferable' Host (Store (DPull a))
   where
     readChan  (CoreToHostChan s p) = readChan'  s p
     writeChan (HostToCoreChan s p) = writeChan' s p
 
-instance PrimType a => Transferable' CoreComp (Store (Vector (Data a)))
+instance PrimType a => Transferable' CoreComp (Store (DPull a))
   where
     readChan  (HostToCoreChan s p) = readChan'  s p
     readChan  (CoreToCoreChan s p) = readChan'  s p
     writeChan (CoreToHostChan s p) = writeChan' s p
     writeChan (CoreToCoreChan s p) = writeChan' s p
 
-instance (Monad m, PrimType a) => TransferType m (Store (Vector (Data a))) (Store (Vector (Data a)))
+instance (Monad m, PrimType a) => TransferType m (Store (DPull a)) (Store (DPull a))
   where
     toTransfer   = return
     fromTransfer = return
 
-instance (MonadComp m, PrimType a) => TransferType m (Vector (Data a)) (Store (Vector (Data a)))
+instance (MonadComp m, PrimType a) => TransferType m (DPull a) (Store (DPull a))
   where
     toTransfer   = initStore
     fromTransfer = unsafeFreezeStore
 
 readChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeReader p m, PrimType a)
-          => SizeSpec (Store (Vector (Data a))) -> p a -> m (Store (Vector (Data a)))
+          => SizeSpec (Store (DPull a)) -> p a -> m (Store (DPull a))
 readChan' (VecChanSizeSpec _ l) p = do
     let l' :: Data Length = value l
     arr <- newArr l'
@@ -157,7 +157,7 @@ readChan' (VecChanSizeSpec _ l) p = do
     return $ Store (lenRef, arr)
 
 writeChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeWriter p m, PrimType a)
-           => SizeSpec (Store (Vector (Data a))) -> p a -> Store (Vector (Data a)) -> m ()
+           => SizeSpec (Store (DPull a)) -> p a -> Store (DPull a) -> m ()
 writeChan' (VecChanSizeSpec _ l) p (Store (_, arr)) = do
     let l' :: Data Length = value l
     pushPipe p (0, l' - 1) arr

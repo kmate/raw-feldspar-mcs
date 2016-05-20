@@ -2,13 +2,14 @@
 module ZeldsparFFT where
 
 import qualified Prelude as P
+import qualified Control.Monad as C
 
 import Zeldspar.Multicore
 
 
-type RealSamples     = Vector (Data Double)
-type ComplexSamples  = Vector (Data (Complex Double))
-type Twiddles        = Vector (Data (Complex Double))
+type RealSamples     = DPull Double
+type ComplexSamples  = DPull (Complex Double)
+type Twiddles        = DPull (Complex Double)
 
 
 flipFlop :: (Transferable a, TransferType CoreComp a' a, Storable a')
@@ -25,7 +26,7 @@ flipFlop (a, b) fs = do
   loop $ do
     input <- receive
     lift $ writeStore a input
-    output <- lift $ foldM go input fs'
+    output <- lift $ C.foldM go input fs'
     emit output
 
 
@@ -43,11 +44,11 @@ rotBit k i = lefts .|. rights
     lefts  = (((ir .>>. k') .<<. 1) .|. (i .&. 1)) .<<. k'
 
 -- | Permute the vector by applying 'rotBit k' on its indices.
-riffle :: Index -> Vector (Data a) -> Vector (Data a)
+riffle :: Index -> DPull a -> DPull a
 riffle k = permute (const $ rotBit k)
 
 -- | Generates parallel bit reversal of a vector with length 'n'.
-bitRev :: PrimType a => Length -> [ Vector (Data a) -> Vector (Data a) ]
+bitRev :: PrimType a => Length -> [ DPull a -> DPull a ]
 bitRev n = [ riffle k | k <- [1..P.floor (logBase 2 $ P.fromIntegral n) - 1] ]
 
 
@@ -81,7 +82,7 @@ fftCore inv n = do
 
 -- | Performs the 'k'th FFT/IFFT stage on a sample vector.
 step :: Twiddles -> Length -> Length -> ComplexSamples -> ComplexSamples
-step twids n k v = Indexed (value n) ixf
+step twids n k v = Pull (value n) ixf
   where
     ixf i = testBit i (i2n k') ? ((twids ! t) * (b - a)) $ (a + b)
       where
@@ -93,7 +94,7 @@ step twids n k v = Indexed (value n) ixf
         n' = P.floor (logBase 2 $ P.fromIntegral n) - 1
 
 twids :: Bool -> Length -> Twiddles
-twids inv n = Indexed (value (n `P.div` 2)) ixf
+twids inv n = Pull (value (n `P.div` 2)) ixf
   where
     scale = if inv then 1 else -1
     ixf i = polar 1 (π * i2n i * value (scale * 2 P./ P.fromIntegral n))
@@ -114,14 +115,14 @@ testFFT inputFile = do
             re :: Data Double <- liftHost $ fget h
             im :: Data Double <- liftHost $ fget h
             setArr i (complex re im) input
-        inp :: Vector (Data (Complex Double)) <- unsafeFreezeVec (value n) input
+        inp :: ComplexSamples <- unsafeFreezeVec (value n) input
         return (h, inp)
     runZ
         (fft n `on` 0)
         (return (inp, true))
         chanSize
         (\output -> do
-            let n = length output
+            let n = length (output :: ComplexSamples)
             printf "%d\n" n
             for (0, 1, Excl n) $ \i -> do
                 let xi :: Data (Complex Double) = output ! i

@@ -12,10 +12,10 @@ import qualified Prelude
 import Control.Monad.Trans
 
 import Feldspar
+import Feldspar.Data.Option
 import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Reference
 import Feldspar.Multicore.Representation
-import Feldspar.Option
 
 
 --------------------------------------------------------------------------------
