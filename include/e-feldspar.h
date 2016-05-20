@@ -1,6 +1,8 @@
 #ifndef __EFELDSPAR_H__
 #define __EFELDSPAR_H__
 
+#ifndef __epiphany__
+
 // host operations on core local memories
 
 #define host_write_local(g, r, c, dst, src, offset, lower, upper) \
@@ -17,14 +19,23 @@
 #define host_read_shared(src, dst, offset, lower, upper) \
     e_read(src, 0, 0, (offset) * sizeof(*dst), (dst) + (lower), ((upper) - (lower) + 1) * sizeof(*dst))
 
+#else
+
 // core operations on core local memories
 
-// TODO: fall back to fast_memcpy when dma requirements fail
 #define core_write_local(dst, src, offset, lower, upper) \
     e_dma_copy((void*)((dst) + (offset)), (void*)((src) + (lower)), ((upper) - (lower) + 1) * sizeof(*src))
 
 #define core_read_local(src, dst, offset, lower, upper) \
     fast_memcpy((void*)((dst) + (lower)), (void*)((src) + (offset)), ((upper) - (lower) + 1) * sizeof(*dst))
+
+// core operations on shared external memory
+
+#define core_write_shared(dst, src, offset, lower, upper) \
+    e_dma_copy((void*)(e_emem_config.base + (dst) + (offset) * sizeof(*src)), (void*)((src) + (lower)), ((upper) - (lower) + 1) * sizeof(*src))
+
+#define core_read_shared(src, dst, offset, lower, upper) \
+    e_dma_copy((void*)((dst) + (lower)), (void*)(e_emem_config.base + (src) + (offset) * sizeof(*dst)), ((upper) - (lower) + 1) * sizeof(*dst))
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -60,13 +71,7 @@ void fast_memcpy(void *dst, const void *src, size_t bytes) {
     }
 }
 
-// core operations on shared external memory
-
-#define core_write_shared(dst, src, offset, lower, upper) \
-    e_dma_copy((void*)(e_emem_config.base + (dst) + (offset) * sizeof(*src)), (void*)((src) + (lower)), ((upper) - (lower) + 1) * sizeof(*src))
-
-#define core_read_shared(src, dst, offset, lower, upper) \
-    e_dma_copy((void*)((dst) + (lower)), (void*)(e_emem_config.base + (src) + (offset) * sizeof(*dst)), ((upper) - (lower) + 1) * sizeof(*dst))
+#endif /* __epiphany__ */
 
 #endif /* __EFELDSPAR_H__ */
 
