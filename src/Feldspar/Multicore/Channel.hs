@@ -147,6 +147,29 @@ instance (MonadComp m, PrimType a) => TransferType m (DPull a) (Store (DPull a))
     toTransfer   = initStore
     fromTransfer = unsafeFreezeStore
 
+instance (MonadComp m, PrimType a) => TransferType m (DPush a) (Store (DPull a))
+  where
+    toTransfer (Push len dump) = do
+        s@(Store (_, arr)) <- newStore len
+        let write i v = setArr i v arr
+        dump write
+        return s
+    fromTransfer (Store (lenRef, arr)) = do
+        len <- getRef lenRef
+        return $ Push len $ \write ->
+            for (0, 1, Excl len) $ \i -> do
+              v <- getArr i arr
+              write i v
+
+instance (MonadComp m, PrimType a) => TransferType m (Dim1 (Arr a)) (Store (DPull a))
+  where
+    toTransfer x = do
+        lenRef <- initRef $ dimLength x
+        return $ Store (lenRef, dim1_inner x)
+    fromTransfer (Store (lenRef, arr)) = do
+        len <- getRef lenRef
+        return $ Dim1 len arr
+
 readChan' :: (MonadComp m, Wait m, Pipe p, BulkPipeReader p m, PrimType a)
           => SizeSpec (Store (DPull a)) -> p a -> m (Store (DPull a))
 readChan' (VecChanSizeSpec _ l) p = do
