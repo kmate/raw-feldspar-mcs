@@ -256,8 +256,8 @@ alignArrays = go . view
 
     align :: forall a. TargetCMD TargetPrams a -> TargetCMD TargetPrams a
     align x = case (prj x :: Maybe (Imp.ArrCMD TargetPrams a)) of
-        Just (Imp.NewArr base _ len) -> inj $ Imp.NewArr base (al) len
-        Just (Imp.InitArr base _ as) -> inj $ Imp.InitArr base al as
+        Just (Imp.NewArr base len) -> inj $ Imp.NewCArr base (al) len
+        Just (Imp.InitArr base as) -> inj $ Imp.InitCArr base al as
         _ -> x
       where
         al :: forall i. Integral i => Maybe i
