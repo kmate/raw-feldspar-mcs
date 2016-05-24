@@ -2,10 +2,10 @@ module Feldspar.Multicore.Pipe
   ( HostToCorePipe, CorePipe, CoreToHostPipe
   , allocHostPipe, allocCorePipe
   , Pipe, initPipe
-  , PipeReader, readPipeA, readPipe
-  , PipeWriter, writePipeA, writePipe
-  , BulkPipeReader, pullPipeA, pullPipe
-  , BulkPipeWriter, pushPipeA, pushPipe
+  , PipeReader, readPipeA, readPipeI, readPipe
+  , PipeWriter, writePipeA, writePipeI, writePipe
+  , BulkPipeReader, pullPipeA, pullPipeI, pullPipe
+  , BulkPipeWriter, pushPipeA, pushPipeI, pushPipe
   ) where
 
 import qualified Prelude
@@ -43,16 +43,24 @@ readPipeA pipe = do
         return elem
 
 -- | Synchronously reads an element from a pipe. Blocks until an element found.
-readPipe  :: (Pipe p, Wait m, PipeReader p m, PrimType a)
-          => p a -> m (Data a)
-readPipe pipe = do
+readPipeI :: (Pipe p, Wait m, PipeReader p m, PrimType a)
+          => m (Data Bool) -> p a -> m (Data a)
+readPipeI cont pipe = do
         value <- newRef
         noValue <- initRef true
-        while (getRef noValue) $ do
-            caseOptionT (readPipeA pipe)
+        while
+            (do continue <- cont
+                notDone <- getRef noValue
+                return $ continue && notDone)
+            (caseOptionT (readPipeA pipe)
                 (const $ busyWait)
-                (setRef value >=> (const $ setRef noValue false))
+                (setRef value >=> (const $ setRef noValue false)))
         getRef value
+
+-- | Synchronously reads an element from a pipe. Blocks until an element found.
+readPipe  :: (Pipe p, Wait m, PipeReader p m, PrimType a)
+          => p a -> m (Data a)
+readPipe = readPipeI (return true)
 
 
 class (Pipe p, LocalRefAccess m) => PipeWriter p m
@@ -80,8 +88,17 @@ writePipeA elem pipe = do
     getRef done
 
 -- | Synchronously writes an element into a pipe. Blocks until the write succeeds.
+writePipeI :: (Pipe p, Wait m, PipeWriter p m, PrimType a)
+           => m (Data Bool) -> Data a -> p a -> m ()
+writePipeI cont elem pipe = while
+    (do continue <- cont
+        done <- writePipeA elem pipe
+        return $ continue && not done)
+    busyWait
+
+-- | Synchronously writes an element into a pipe. Blocks until the write succeeds.
 writePipe  :: (Pipe p, Wait m, PipeWriter p m, PrimType a) => Data a -> p a -> m ()
-writePipe elem pipe = while (not <$> writePipeA elem pipe) $ busyWait
+writePipe = writePipeI (return true)
 
 
 class (Pipe p, LocalRefAccess m) => BulkPipeReader p m
@@ -114,18 +131,21 @@ pullPipeA pipe (lower, upper) dst = do
             return toRead)
         (return 0)
 
--- | Synchronously reads multple elements from a pipe.
+-- | Synchronously reads multple elements from a pipe (interruptible).
 --   Blocks until all the elements in the given range are read.
-pullPipe  :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
-          => p a -> IndexRange -> Arr a -> m ()
-pullPipe pipe (lower, upper) dst = do
+pullPipeI :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
+          => m (Data Bool) -> p a -> IndexRange -> Arr a ->  m ()
+pullPipeI cont pipe (lower, upper) dst = do
     let total = upper - lower + 1
     read <- initRef (value 0 :: Data Length)
-    -- until all data is read
-    while ((<total) <$> getRef read) $ do
-        done <- getRef read
-        readNow <- pullPipeA pipe (lower + done, upper) dst
-        iff (0 == readNow) busyWait (setRef read (done + readNow))
+    -- until all data read or interrupted
+    while
+        (do continue <- cont
+            done <- getRef read
+            return $ continue && done < total)
+        (do done <- getRef read
+            readNow <- pullPipeA pipe (lower + done, upper) dst
+            iff (0 == readNow) busyWait (setRef read (done + readNow)))
     -- reset pointers for performance if needed
     rx <- getCReadPtr  pipe
     wx <- getCWritePtr pipe
@@ -133,6 +153,12 @@ pullPipe pipe (lower, upper) dst = do
         (do setReadPtr  pipe 0
             setWritePtr pipe 0)
         (return ())
+
+-- | Synchronously reads multple elements from a pipe.
+--   Blocks until all the elements in the given range are read.
+pullPipe :: (Pipe p, Wait m, BulkPipeReader p m, PrimType a)
+          => p a -> IndexRange -> Arr a -> m ()
+pullPipe = pullPipeI (return true)
 
 
 class (Pipe p, LocalRefAccess m) => BulkPipeWriter p m
@@ -166,18 +192,27 @@ pushPipeA pipe (lower, upper) src = do
             return toWrite)
         (return 0)
 
+-- | Synchronously writes multiple elements into a pipe (interruptible).
+--   Blcoks untipl all the elements in the given range are written.
+pushPipeI :: (Pipe p, Wait m, BulkPipeWriter p m, PrimType a)
+          => m (Data Bool)-> p a -> IndexRange -> Arr a -> m ()
+pushPipeI cont pipe (lower, upper) src = do
+    let total = upper - lower + 1
+    written <- initRef (value 0 :: Data Length)
+    -- until all data written or interrupted
+    while
+        (do continue <- cont
+            done <- getRef written
+            return $ continue && done < total)
+        (do done <- getRef written
+            writtenNow <- pushPipeA pipe (lower + done, upper) src
+            iff (0 == writtenNow) busyWait (setRef written (done + writtenNow)))
+
 -- | Synchronously writes multiple elements into a pipe.
 --   Blcoks untipl all the elements in the given range are written.
 pushPipe  :: (Pipe p, Wait m, BulkPipeWriter p m, PrimType a)
           => p a -> IndexRange -> Arr a -> m ()
-pushPipe pipe (lower, upper) src = do
-    let total = upper - lower + 1
-    written <- initRef (value 0 :: Data Length)
-    -- until all data is written
-    while ((<total) <$> getRef written) $ do
-        done <- getRef written
-        writtenNow <- pushPipeA pipe (lower + done, upper) src
-        iff (0 == writtenNow) busyWait (setRef written (done + writtenNow))
+pushPipe = pushPipeI (return true)
 
 
 --------------------------------------------------------------------------------

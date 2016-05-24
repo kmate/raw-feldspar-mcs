@@ -1,5 +1,9 @@
 module Zeldspar.Multicore.Compile where
 
+import Control.Monad.Trans as C
+import Prelude hiding ((&&))
+
+import Feldspar.Data.Option
 import Feldspar.Run.Concurrent (waitThread)
 import Feldspar.Multicore
 import Feldspar.Multicore.Representation hiding (OnCore)
@@ -22,26 +26,44 @@ runZ ps inp ichs out ochs = do
     i <- newChan host 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
         o <- newChan c n chs
-        onHost $ onCore c $ translate (void p) (readChan i) (writeChan o)
+        onHost $ onCore c $ translate (void p) (coreRead i o) (coreWrite i o)
         return o
     onHost $ do
         -- Read from output channel, shove output into sink
-        outThread <- forkWithId $ \t -> do
+        outThread <- forkWithId $ \_ -> do
             continue <- initRef true
             while (getRef continue) $ do
-                x <- readChan o
-                x' <- fromTransfer x
-                dontStop <- out x'
-                setRef continue dontStop
+                s <- newSlot o
+                isOpen <- readChan o s
+                iff isOpen
+                    (do x <- getSlot s
+                        x' <- fromTransfer x
+                        dontStop <- out x'
+                        setRef continue dontStop
+                        iff dontStop (return ()) (closeChan o))
+                    (setRef continue false)
 
         -- Read from source, shove into input channel
         continue <- initRef true
         while (getRef continue) $ do
             (x, dontStop) <- inp
-            x' <- toTransfer x
-            writeChan i x'
-            setRef continue dontStop
+            iff dontStop
+                (do  x' <- toTransfer x
+                     isOpen <- writeChan i x'
+                     setRef continue isOpen)
+                (setRef continue false)
+        closeChan i
         lift $ waitThread outThread
+    where
+        coreRead i o = do
+            s <- newSlot i
+            isOpen <- readChan i s
+            iff isOpen (return ()) (closeChan o)
+            getSlot s
+
+        coreWrite i o v = do
+            isOpen <- writeChan o v
+            iff isOpen (return ()) (closeChan i)
 
 
 foldParZ :: (Monad m, Transferable inp, Transferable out)
