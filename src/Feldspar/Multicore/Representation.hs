@@ -97,11 +97,32 @@ runWaitCMD BusyWait = delayThread (value 100 :: Data Int32)
 
 
 --------------------------------------------------------------------------------
+-- Halting core
+--------------------------------------------------------------------------------
+
+data CoreRef = CoreRefComp CoreId | CoreRefRun ThreadId
+
+data HaltCMD fs a
+  where
+    HaltCore :: CoreRef -> HaltCMD (Param3 (prog :: * -> *)
+                                   (exp  :: * -> *)
+                                   (pred :: * -> Constraint)) ()
+
+instance HFunctor HaltCMD
+  where
+    hfmap _ (HaltCore cr) = HaltCore cr
+
+runHaltCMD :: HaltCMD (Param3 Run exp pred) a -> Run a
+runHaltCMD (HaltCore (CoreRefRun t)) = killThread t
+
+
+--------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
 
 type CoreCMD = Imp.ControlCMD
            :+: WaitCMD
+           :+: HaltCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
 
@@ -130,6 +151,9 @@ runControlCompCMD (Imp.While cond body) = while cond body
 instance Interp WaitCMD Run (Param2 Data PrimType')
   where interp = runWaitCMD
 
+instance Interp HaltCMD Run (Param2 Data PrimType')
+  where interp = runHaltCMD
+
 
 --------------------------------------------------------------------------------
 -- Host layer
@@ -138,10 +162,10 @@ instance Interp WaitCMD Run (Param2 Data PrimType')
 data MulticoreCMD fs a
   where
     OnCore :: CoreId
-           -> CoreComp ()
+           -> (CoreRef -> CoreComp ())
            -> MulticoreCMD (Param3 (prog :: * -> *)
                                    (exp  :: * -> *)
-                                   (pred :: * -> Constraint)) ()
+                                   (pred :: * -> Constraint)) CoreRef
 
 instance HFunctor MulticoreCMD
   where
@@ -151,6 +175,7 @@ instance HFunctor MulticoreCMD
 type HostCMD = Imp.ControlCMD
            :+: Imp.ThreadCMD
            :+: WaitCMD
+           :+: HaltCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
            :+: MulticoreCMD
@@ -198,7 +223,9 @@ instance ArrayWrapper arr => Interp (BulkArrCMD arr) Run (Param2 exp pred)
 
 
 runMulticoreCMD :: MulticoreCMD (Param3 Run exp pred) a -> Run a
-runMulticoreCMD (OnCore coreId comp) = void $ fork $ liftRun $ runCoreComp comp
+runMulticoreCMD (OnCore coreId comp) =
+    (CoreRefRun <$>) . forkWithId $ liftRun . runCoreComp . comp . CoreRefRun
+
 
 instance Interp MulticoreCMD Run (Param2 exp pred)
   where interp = runMulticoreCMD

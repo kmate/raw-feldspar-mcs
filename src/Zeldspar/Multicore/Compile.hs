@@ -26,7 +26,8 @@ runZ ps inp ichs out ochs = do
     i <- newChan host 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
         o <- newChan c n chs
-        onHost $ onCore c $ translate (void p) (coreRead i o) (coreWrite i o)
+        onHost $ onCoreWithRef c $ \r ->
+            translate (void p) (coreRead r i o) (coreWrite r i o)
         return o
     onHost $ do
         -- Read from output channel, shove output into sink
@@ -55,15 +56,15 @@ runZ ps inp ichs out ochs = do
         closeChan i
         lift $ waitThread outThread
     where
-        coreRead i o = do
+        coreRead r i o = do
             s <- newSlot i
             isOpen <- readChan i s
-            iff isOpen (return ()) (closeChan o)
+            iff isOpen (return ()) (closeChan o >> haltCore r)
             getSlot s
 
-        coreWrite i o v = do
+        coreWrite r i o v = do
             isOpen <- writeChan o v
-            iff isOpen (return ()) (closeChan i)
+            iff isOpen (return ()) (closeChan i >> haltCore r)
 
 
 foldParZ :: (Monad m, Transferable inp, Transferable out)

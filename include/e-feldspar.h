@@ -21,6 +21,10 @@
 
 #else
 
+// halting current core
+
+#define core_halt() return 0
+
 // core operations on core local memories
 
 #define core_write_local(dst, src, offset, lower, upper) \
