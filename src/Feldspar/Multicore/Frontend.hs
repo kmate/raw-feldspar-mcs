@@ -34,6 +34,15 @@ class Wait m
 
 
 --------------------------------------------------------------------------------
+-- Halting core
+--------------------------------------------------------------------------------
+
+class Halt m
+  where
+    haltCore :: CoreRef -> m ()
+
+
+--------------------------------------------------------------------------------
 -- Core layer
 --------------------------------------------------------------------------------
 
@@ -65,12 +74,20 @@ instance Wait CoreComp
     busyWait = CoreComp $ singleInj BusyWait
 
 
+instance Halt CoreComp
+  where
+    haltCore = CoreComp . singleInj . HaltCore
+
+
 --------------------------------------------------------------------------------
 -- Host layer
 --------------------------------------------------------------------------------
 
-onCore :: CoreId -> CoreComp () -> Host ()
-onCore coreId = Host . singleInj . OnCore coreId
+onCoreWithRef :: CoreId -> (CoreRef -> CoreComp ()) -> Host CoreRef
+onCoreWithRef coreId = Host . singleInj . OnCore coreId
+
+onCore :: CoreId -> CoreComp () -> Host CoreRef
+onCore coreId = onCoreWithRef coreId . const
 
 
 instance ArrayAccess LocalArr Host
@@ -87,6 +104,11 @@ instance ArrayAccess SharedArr Host
 instance Wait Host
   where
     busyWait = Host $ singleInj BusyWait
+
+
+instance Halt Host
+  where
+    haltCore = Host . singleInj . HaltCore
 
 
 forkWithId :: (ThreadId -> Host ()) -> Host ThreadId

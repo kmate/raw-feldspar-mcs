@@ -161,6 +161,16 @@ instance Interp WaitCMD RunGen (Param2 exp pred)
   where interp = compHostWaitCMD
 
 
+compHostHaltCMD :: HaltCMD (Param3 RunGen exp pred) a -> RunGen a
+compHostHaltCMD (HaltCore (CoreRefComp coreId)) = do
+    groupAddr <- gets group
+    let (r, c) = groupCoord coreId
+    lift $ callProc "e_halt" [ groupAddr, valArg $ value r, valArg $ value c ]
+
+instance Interp HaltCMD RunGen (Param2 exp pred)
+  where interp = compHostHaltCMD
+
+
 compLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 RunGen exp pred) a -> RunGen a
 compLocalBulkArrCMD (WriteArr offset spm range ram) =
     compLocalCopy "host_write_local"  spm ram offset range
@@ -216,10 +226,12 @@ compSharedCopy op spm ram offset (lower, upper) = do
 compMulticoreCMD :: MulticoreCMD (Param3 RunGen exp pred) a -> RunGen a
 compMulticoreCMD (OnCore coreId comp) = do
     s <- genState
+    let coreRef = CoreRefComp coreId
     compCore coreId
         $ evalGen s
         $ interpretT ((lift :: Run a -> CoreGen a) . liftRun)
-        $ unCoreComp comp
+        $ unCoreComp
+        $ comp coreRef
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ addInclude "<e-loader.h>"
@@ -230,6 +242,7 @@ compMulticoreCMD (OnCore coreId comp) = do
         , valArg $ value c
         , valArg (value 1 :: Data Int32) {- E_TRUE -}
         ]
+    return coreRef
 
 instance Interp MulticoreCMD RunGen (Param2 exp pred)
   where interp = compMulticoreCMD
@@ -328,6 +341,13 @@ compCoreWaitCMD BusyWait = return ()
 
 instance Interp WaitCMD CoreGen (Param2 exp pred)
   where interp = compCoreWaitCMD
+
+
+compCoreHaltCMD :: HaltCMD (Param3 CoreGen exp pred) a -> CoreGen a
+compCoreHaltCMD (HaltCore _) = lift $ callProc "core_halt" []
+
+instance Interp HaltCMD CoreGen (Param2 exp pred)
+  where interp = compCoreHaltCMD
 
 
 compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 CoreGen exp pred) a -> CoreGen a
