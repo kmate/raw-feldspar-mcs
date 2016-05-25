@@ -53,9 +53,6 @@ writeChan (Chan isOpen _ pipeAdapter _) v = do
         (writePipeAdapter pipeAdapter (getLocalRef isOpen) v >> return true)
         (return false)
 
-lastChanReadOK :: LocalRefAccess m => Chan a -> m (Data Bool)
-lastChanReadOK (Chan _ lastReadOK _ _) = getLocalRef lastReadOK
-
 closeChan :: LocalRefAccess m => Chan a -> m ()
 closeChan (Chan isOpen _ _ _) = setLocalRef isOpen false
 
