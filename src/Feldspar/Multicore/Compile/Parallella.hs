@@ -168,20 +168,13 @@ instance Interp Imp.ThreadCMD RunGen (Param2 Data PrimType')
   where interp = compThreadCMD
 
 
-compHostWaitCMD :: WaitCMD (Param3 RunGen exp pred) a -> RunGen a
-compHostWaitCMD BusyWait = lift $ delayThread (100 :: Data Int32)
-
-instance Interp WaitCMD RunGen (Param2 exp pred)
-  where interp = compHostWaitCMD
-
-
-compHostHaltCMD :: HaltCMD (Param3 RunGen exp pred) a -> RunGen a
+compHostHaltCMD :: CoreHaltCMD (Param3 RunGen exp pred) a -> RunGen a
 compHostHaltCMD (HaltCore (CoreRefComp coreId)) = do
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
     lift $ callProc "e_halt" [ groupAddr, valArg $ value r, valArg $ value c ]
 
-instance Interp HaltCMD RunGen (Param2 exp pred)
+instance Interp CoreHaltCMD RunGen (Param2 exp pred)
   where interp = compHostHaltCMD
 
 
@@ -350,17 +343,10 @@ instance Interp Imp.ControlCMD CoreGen (Param2 Data PrimType')
   where interp = compControlCMD
 
 
-compCoreWaitCMD :: Monad m => WaitCMD (Param3 m exp pred) a -> m a
-compCoreWaitCMD BusyWait = return ()
-
-instance Interp WaitCMD CoreGen (Param2 exp pred)
-  where interp = compCoreWaitCMD
-
-
-compCoreHaltCMD :: HaltCMD (Param3 CoreGen exp pred) a -> CoreGen a
+compCoreHaltCMD :: CoreHaltCMD (Param3 CoreGen exp pred) a -> CoreGen a
 compCoreHaltCMD (HaltCore _) = lift $ callProc "core_halt" []
 
-instance Interp HaltCMD CoreGen (Param2 exp pred)
+instance Interp CoreHaltCMD CoreGen (Param2 exp pred)
   where interp = compCoreHaltCMD
 
 

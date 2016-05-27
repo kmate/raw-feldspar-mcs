@@ -71,37 +71,21 @@ runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
 
 
 --------------------------------------------------------------------------------
--- Busy waiting
---------------------------------------------------------------------------------
-
-data WaitCMD fs a
-  where
-    BusyWait :: WaitCMD (Param3 prog exp pred) ()
-
-instance HFunctor WaitCMD
-  where
-    hfmap _ BusyWait = BusyWait
-
-runWaitCMD :: WaitCMD (Param3 Run exp pred) a -> Run a
-runWaitCMD BusyWait = delayThread (value 100 :: Data Int32)
-
-
---------------------------------------------------------------------------------
 -- Halting core
 --------------------------------------------------------------------------------
 
 data CoreRef = CoreRefComp CoreId | CoreRefRun ThreadId
 
-data HaltCMD fs a
+data CoreHaltCMD fs a
   where
-    HaltCore :: CoreRef -> HaltCMD (Param3 prog exp pred) ()
+    HaltCore :: CoreRef -> CoreHaltCMD (Param3 prog exp pred) ()
 
-instance HFunctor HaltCMD
+instance HFunctor CoreHaltCMD
   where
     hfmap _ (HaltCore cr) = HaltCore cr
 
-runHaltCMD :: HaltCMD (Param3 Run exp pred) a -> Run a
-runHaltCMD (HaltCore (CoreRefRun t)) = killThread t
+runCoreHaltCMD :: CoreHaltCMD (Param3 Run exp pred) a -> Run a
+runCoreHaltCMD (HaltCore (CoreRefRun t)) = killThread t
 
 
 --------------------------------------------------------------------------------
@@ -109,8 +93,7 @@ runHaltCMD (HaltCore (CoreRefRun t)) = killThread t
 --------------------------------------------------------------------------------
 
 type CoreCMD = Imp.ControlCMD
-           :+: WaitCMD
-           :+: HaltCMD
+           :+: CoreHaltCMD
            :+: CoreChanCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
@@ -137,11 +120,8 @@ runControlCompCMD (Imp.If cond t f)     = iff cond t f
 runControlCompCMD (Imp.For range body)  = Run $ singleInj $ Imp.For range (unRun . body)
 runControlCompCMD (Imp.While cond body) = while cond body
 
-instance Interp WaitCMD Run (Param2 Data PrimType')
-  where interp = runWaitCMD
-
-instance Interp HaltCMD Run (Param2 Data PrimType')
-  where interp = runHaltCMD
+instance Interp CoreHaltCMD Run (Param2 Data PrimType')
+  where interp = runCoreHaltCMD
 
 
 --------------------------------------------------------------------------------
@@ -161,8 +141,7 @@ instance HFunctor MulticoreCMD
 
 type HostCMD = Imp.ControlCMD
            :+: Imp.ThreadCMD
-           :+: WaitCMD
-           :+: HaltCMD
+           :+: CoreHaltCMD
            :+: CoreChanCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
