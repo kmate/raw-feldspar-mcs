@@ -3,6 +3,7 @@ module Feldspar.Multicore.Frontend where
 import Control.Monad.Operational.Higher
 
 import Feldspar
+import Feldspar.Multicore.CoreId
 import Feldspar.Multicore.Representation
 
 import Language.Embedded.Concurrent as Imp
@@ -119,10 +120,10 @@ forkWithId = Host . Imp.forkWithId . (unHost .)
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-allocLArr :: PrimType a => CoreId -> Size -> Multicore (LocalArr a)
+allocLArr :: PrimType a => CoreId -> Length -> Multicore (LocalArr a)
 allocLArr coreId = Multicore . singleInj . AllocLArr coreId
 
-allocSArr :: PrimType a => Size -> Multicore (SharedArr a)
+allocSArr :: PrimType a => Length -> Multicore (SharedArr a)
 allocSArr = Multicore . singleInj . AllocSArr
 
 onHost :: Host a -> Multicore a

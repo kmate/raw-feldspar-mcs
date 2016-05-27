@@ -3,9 +3,10 @@ module Feldspar.Multicore.Representation where
 import Control.Monad.Operational.Higher
 import Control.Monad.Trans
 import Data.Word
-import GHC.Exts (Constraint)
 
 import Feldspar
+import Feldspar.Multicore.CoreId
+import Feldspar.Multicore.Channel.Representation hiding (CoreId)
 import Feldspar.Primitive.Representation
 import Feldspar.Representation
 import Feldspar.Run
@@ -15,15 +16,6 @@ import Feldspar.Run.Representation
 import qualified Language.Embedded.Concurrent.CMD as Imp
 import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
-
-
-type CoreId     = Word32
-type Size       = Word32
-type IndexRange = (Data Index, Data Index)
-
-
-sharedId :: CoreId
-sharedId = maxBound  -- use the maximum representable value for shared addresses
 
 
 newtype LocalArr  a = LocalArr  { unLocalArr  :: Arr a }
@@ -49,14 +41,14 @@ instance ArrayWrapper SharedArr
 -- Bulk array commands and interpretation
 --------------------------------------------------------------------------------
 
+type IndexRange = (Data Index, Data Index)
+
 data BulkArrCMD (arr :: * -> *) fs a
   where
     WriteArr :: PrimType a
              => Data Index -> arr a
              -> IndexRange -> Arr a
-             -> BulkArrCMD arr (Param3 (prog :: * -> *)
-                                       (exp  :: * -> *)
-                                       (pred :: * -> Constraint)) ()
+             -> BulkArrCMD arr (Param3 prog exp pred) ()
     ReadArr  :: PrimType a
              => Data Index -> arr a
              -> IndexRange -> Arr a -> BulkArrCMD arr (Param3 prog exp pred) ()
@@ -84,9 +76,7 @@ runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
 
 data WaitCMD fs a
   where
-    BusyWait :: WaitCMD (Param3 (prog :: * -> *)
-                                (exp  :: * -> *)
-                                (pred :: * -> Constraint)) ()
+    BusyWait :: WaitCMD (Param3 prog exp pred) ()
 
 instance HFunctor WaitCMD
   where
@@ -104,9 +94,7 @@ data CoreRef = CoreRefComp CoreId | CoreRefRun ThreadId
 
 data HaltCMD fs a
   where
-    HaltCore :: CoreRef -> HaltCMD (Param3 (prog :: * -> *)
-                                   (exp  :: * -> *)
-                                   (pred :: * -> Constraint)) ()
+    HaltCore :: CoreRef -> HaltCMD (Param3 prog exp pred) ()
 
 instance HFunctor HaltCMD
   where
@@ -123,6 +111,7 @@ runHaltCMD (HaltCore (CoreRefRun t)) = killThread t
 type CoreCMD = Imp.ControlCMD
            :+: WaitCMD
            :+: HaltCMD
+           :+: CoreChanCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
 
@@ -163,9 +152,7 @@ data MulticoreCMD fs a
   where
     OnCore :: CoreId
            -> (CoreRef -> CoreComp ())
-           -> MulticoreCMD (Param3 (prog :: * -> *)
-                                   (exp  :: * -> *)
-                                   (pred :: * -> Constraint)) CoreRef
+           -> MulticoreCMD (Param3 prog exp pred) CoreRef
 
 instance HFunctor MulticoreCMD
   where
@@ -176,6 +163,7 @@ type HostCMD = Imp.ControlCMD
            :+: Imp.ThreadCMD
            :+: WaitCMD
            :+: HaltCMD
+           :+: CoreChanCMD
            :+: BulkArrCMD LocalArr
            :+: BulkArrCMD SharedArr
            :+: MulticoreCMD
@@ -239,12 +227,10 @@ data AllocCMD fs a
   where
     AllocLArr :: pred a
               => CoreId
-              -> Size
-              -> AllocCMD (Param3 (prog :: * -> *)
-                                  (exp  :: * -> *)
-                                  (pred :: * -> Constraint)) (LocalArr a)
+              -> Length
+              -> AllocCMD (Param3 prog exp pred) (LocalArr a)
     AllocSArr :: pred a
-              => Size
+              => Length
               -> AllocCMD (Param3 prog exp pred) (SharedArr a)
     OnHost :: Host a -> AllocCMD (Param3 prog exp pred) a
 
@@ -256,7 +242,7 @@ instance HFunctor AllocCMD
 
 
 newtype Multicore a = Multicore
-    { unMulticore :: Program AllocCMD (Param2 Prim PrimType) a }
+    { unMulticore :: Program (AllocCMD :+: CoreChanAllocCMD) (Param2 Prim PrimType) a }
   deriving (Functor, Applicative, Monad)
 
 

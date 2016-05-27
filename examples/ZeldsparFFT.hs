@@ -12,7 +12,7 @@ type ComplexSamples  = DPull (Complex Double)
 type Twiddles        = DPull (Complex Double)
 
 
-flipFlop :: (Transferable a, TransferType CoreComp a' a, Storable a')
+flipFlop :: (CoreTransferable a, CoreTransferType CoreComp a' a, Storable a')
          => (Store a', Store a')
          -> [a' -> a']
          -> CoreZ a' a' ()
@@ -147,4 +147,8 @@ testAll = do
 
 runTestCompiled = runCompiled' opts test
   where
-    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
+    opts = defaultExtCompilerOpts
+        { externalFlagsPre  = [ "-I../imperative-edsl/include"
+                              , "../imperative-edsl/csrc/chan.c"]
+        , externalFlagsPost = [ "-lpthread" ]
+        }

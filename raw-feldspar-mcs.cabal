@@ -20,10 +20,11 @@ library
   exposed-modules:
     Feldspar.Multicore.Representation
     Feldspar.Multicore.Reference
-    Feldspar.Multicore.Pipe
     Feldspar.Multicore.Frontend
     Feldspar.Multicore.Compile.Parallella
-    Feldspar.Multicore.Channel
+    Feldspar.Multicore.Channel.Representation
+    Feldspar.Multicore.Channel.Frontend
+    Feldspar.Multicore.CoreId
     Feldspar.Multicore
     Zeldspar.Multicore.Representation
     Zeldspar.Multicore.Frontend
@@ -41,6 +42,7 @@ library
     GeneralizedNewtypeDeriving
     KindSignatures
     MultiParamTypeClasses
+    PolyKinds
     Rank2Types
     ScopedTypeVariables
     TypeFamilies

@@ -3,15 +3,16 @@ module Zeldspar.Multicore.Frontend where
 import Control.Monad.Trans as C (lift)
 
 import Feldspar.Run.Representation
-import Feldspar.Multicore.Channel
+import Feldspar.Multicore.CoreId
+import Feldspar.Multicore.Channel.Frontend
 import Feldspar.Multicore.Representation hiding (OnCore)
 import Zeldspar.Multicore.Representation
 
 import Ziria (liftIn, liftOut)
 
 
-on :: ( Transferable minp, TransferType CoreComp cinp minp
-      , Transferable mout, TransferType CoreComp cout mout )
+on :: ( CoreTransferable minp, CoreTransferType CoreComp cinp minp
+      , CoreTransferable mout, CoreTransferType CoreComp cout mout )
    => CoreZ cinp cout a
    -> CoreId
    -> MulticoreZ minp mout a
@@ -22,7 +23,7 @@ on = OnCore . liftOut toTransfer . liftIn fromTransfer
 --   with (>>|) to create a mixfix operator with a channel size specifier in the
 --   middle, for example 'a |>>n>>| b' composes 'a' and 'b' through a channel of
 --   size 'n'.
-(|>>) :: Transferable mid
+(|>>) :: CoreTransferable mid
       => MulticoreZ inp mid a
       -> SizeSpec mid
       -> (MulticoreZ mid out b -> MulticoreZ inp out ())

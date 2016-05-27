@@ -13,8 +13,8 @@ import Zeldspar.Multicore.Representation
 
 
 runZ :: forall inp inp' out out' a
-     .  ( Transferable inp, TransferType Host inp' inp
-        , Transferable out, TransferType Host out' out )
+     .  ( CoreTransferable inp, CoreTransferType Host inp' inp
+        , CoreTransferable out, CoreTransferType Host out' out )
      => MulticoreZ inp out a
      -> (Host (inp', Data Bool))    -- ^ Source
      -> SizeSpec inp                -- ^ Source channel size
@@ -23,7 +23,7 @@ runZ :: forall inp inp' out out' a
      -> Multicore ()
 runZ ps inp ichs out ochs = do
     let next = nextCoreIds ps
-    i <- newChan host 0 ichs
+    i <- newChan hostId 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
         o <- newChan c n chs
         onHost $ onCoreWithRef c $ \r ->
@@ -67,12 +67,12 @@ runZ ps inp ichs out ochs = do
             iff isOpen (return ()) (closeChan i >> haltCore r)
 
 
-foldParZ :: (Monad m, Transferable inp, Transferable out)
+foldParZ :: (Monad m, CoreTransferable inp, CoreTransferable out)
          => SizeSpec out
          -> c inp
          -> CoreIdTree
          -> MulticoreZ inp out a
-         -> (forall inp out a. (Transferable inp, Transferable out)
+         -> (forall inp out a. (CoreTransferable inp, CoreTransferable out)
              => SizeSpec out -> c inp -> CoreId -> CoreId -> CoreZ inp out a -> m (c out))
          -> m (c out)
 foldParZ chs acc (One n)     (OnCore  p c)   f = f chs acc c n p
@@ -97,7 +97,7 @@ ids (One c)   = [c]
 ids (Two a b) = ids a ++ ids b
 
 shift :: [CoreId] -> [CoreId]
-shift (_:cs) = cs ++ [host]
+shift (_:cs) = cs ++ [hostId]
 
 rebuild :: CoreIdTree -> [CoreId] -> CoreIdTree
 rebuild (One _)  [c] = One c

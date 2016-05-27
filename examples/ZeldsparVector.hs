@@ -76,4 +76,8 @@ testAll = do
 
 runTestCompiled = runCompiled' opts test
   where
-    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
+    opts = defaultExtCompilerOpts
+        { externalFlagsPre  = [ "-I../imperative-edsl/include"
+                              , "../imperative-edsl/csrc/chan.c"]
+        , externalFlagsPost = [ "-lpthread" ]
+        }

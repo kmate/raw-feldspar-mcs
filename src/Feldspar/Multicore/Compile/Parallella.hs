@@ -13,6 +13,8 @@ import Data.Proxy
 import qualified Data.Set as Set
 import Data.TypedStruct
 
+import Feldspar.Multicore.CoreId
+import Feldspar.Multicore.Channel.Representation hiding (CoreId)
 import Feldspar.Multicore.Representation
 import Feldspar.Primitive.Representation
 import Feldspar.Representation
@@ -29,6 +31,18 @@ import Language.Embedded.Backend.C.Expression
 import qualified Language.Embedded.Concurrent.CMD as Imp
 import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
+
+
+
+instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
+  where interp = error "TODO"
+
+instance Interp CoreChanCMD RunGen (Param2 Data PrimType')
+  where interp = error "TODO"
+
+instance Interp CoreChanCMD CoreGen (Param2 Data PrimType')
+  where interp = error "TODO"
+
 
 
 icompileAll :: MonadRun m => m a -> IO ()
@@ -90,7 +104,7 @@ compAllocCMD (OnHost host) = do
 compAlloc :: (ArrayWrapper arr, CompExp Prim, CompTypeClass PrimType, PrimType a)
           => AllocCMD (Param3 RunGen Prim PrimType) (arr a)
           -> CoreId
-          -> Size
+          -> Length
           -> RunGen (arr a, Length)
 compAlloc cmd coreId size = do
     let (ty, incl) = getArrElemType cmd
@@ -412,10 +426,10 @@ cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
 mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> arr a
-mkArrayRef = wrapArr . Arr . Single . Imp.ArrComp
+mkArrayRef = wrapArr . Arr 0 . Single . Imp.ArrComp
 
 arrayRefName :: ArrayWrapper arr => arr a -> VarId
-arrayRefName (unwrapArr -> (Arr (Single (Imp.ArrComp name)))) = name
+arrayRefName (unwrapArr -> (Arr _ (Single (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
@@ -461,7 +475,7 @@ start g = RGState
     , shmMap  = Map.empty
     }
 
-allocate :: CoreId -> Size -> RGState -> ((LocalAddress, Name), RGState)
+allocate :: CoreId -> Length -> RGState -> ((LocalAddress, Name), RGState)
 allocate coreId size s@RGState{..} = ((startAddr, newName), s
     { nextId  = nextId + 1
     , addrMap = newAddrMap
@@ -568,7 +582,7 @@ sharedBase :: LocalAddress  -- relative to external memory base
 sharedBase = 0x1000000
 
 
-sizeOf :: C.Type -> Size
+sizeOf :: C.Type -> Length
 sizeOf (isCTypeOf (Proxy :: Proxy Bool)             -> True) = 1
 sizeOf (isCTypeOf (Proxy :: Proxy Int8)             -> True) = 1
 sizeOf (isCTypeOf (Proxy :: Proxy Int16)            -> True) = 2

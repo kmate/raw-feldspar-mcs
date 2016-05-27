@@ -1,6 +1,7 @@
 module Feldspar.Multicore.Reference where
 
 import Feldspar
+import Feldspar.Multicore.CoreId
 import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Representation
 
