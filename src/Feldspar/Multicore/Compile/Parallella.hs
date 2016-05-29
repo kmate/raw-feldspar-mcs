@@ -42,30 +42,42 @@ import qualified Language.Embedded.Imperative.CMD as Imp
 
 compCoreChanAllocCMD :: CoreChanAllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
 compCoreChanAllocCMD cmd@(NewChan f t sz)
-  | isCoreToCore = return $ CoreChanComp CoreChanRep
-  | otherwise    = return $ CoreChanComp HostChanRep
-  where
-    isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
+    | isCoreToCore = do
+        lift $ do
+            addInclude "<feldspar-parallella.h>"
+            callProc "init_core_chan" []
+        return $ CoreChanComp CoreChanRep
+    | otherwise = do
+        lift $ do
+            addInclude "<feldspar-parallella.h>"
+            callProc "init_host_chan" []
+        return $ CoreChanComp HostChanRep
+    where
+      isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
 
 instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
   where interp = compCoreChanAllocCMD
 
 
 compHostCoreChanCMD :: CoreChanCMD (Param3 RunGen Data PrimType') a -> RunGen a
-compHostCoreChanCMD (WriteOne c v) =  error "TODO"
-compHostCoreChanCMD (ReadChan c off sz arr) = error "TODO"
-compHostCoreChanCMD (WriteChan c off sz arr) = error "TODO"
-compHostCoreChanCMD (CloseChan c) = error "TODO"
+compHostCoreChanCMD (WriteOne c v) = return $ ValComp "// TODO"
+compHostCoreChanCMD (ReadChan c off sz arr) = return $ ValComp "// TODO"
+compHostCoreChanCMD (WriteChan c off sz arr) = return $ ValComp "// TODO"
+compHostCoreChanCMD (CloseChan c) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callProc "host_close_chan" []
 
 instance Interp CoreChanCMD RunGen (Param2 Data PrimType')
   where interp = compHostCoreChanCMD
 
 
 compCoreChanCMD :: CoreChanCMD (Param3 CoreGen Data PrimType') a -> CoreGen a
-compCoreChanCMD (WriteOne c v) = error "TODO"
-compCoreChanCMD (ReadChan c off sz arr) = error "TODO"
-compCoreChanCMD (WriteChan c off sz arr) = error "TODO"
-compCoreChanCMD (CloseChan c) = error "TODO"
+compCoreChanCMD (WriteOne c v) = return $ ValComp "// TODO"
+compCoreChanCMD (ReadChan c off sz arr) = return $ ValComp "// TODO"
+compCoreChanCMD (WriteChan c off sz arr) = return $ ValComp "// TODO"
+compCoreChanCMD (CloseChan c) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callProc "core_close_chan" []
 
 instance Interp CoreChanCMD CoreGen (Param2 Data PrimType')
   where interp = compCoreChanCMD
@@ -118,36 +130,35 @@ wrapESDK program = do
 compAllocCMD :: (CompExp Prim, CompTypeClass PrimType)
              => AllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
 compAllocCMD cmd@(AllocSArr size) = do
-    (arr, size) <- compAlloc cmd sharedId size
-    shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
-    modify (arrayRefName arr `describes` shmRef)
-    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrapArr arr, valArg $ value size ]
-    return arr
-compAllocCMD cmd@(AllocLArr coreId size) = fst <$> compAlloc cmd coreId size
+    let cty = compType (proxyPred cmd) (proxyArg cmd)
+    fst <$> allocShared cty size
+compAllocCMD cmd@(AllocLArr coreId size) = do
+    let cty = compType (proxyPred cmd) (proxyArg cmd)
+    fst <$> allocLocal cty coreId size
 compAllocCMD (OnHost host) = do
     s <- get
     lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
 
-compAlloc :: (ArrayWrapper arr, CompExp Prim, CompTypeClass PrimType, PrimType a)
-          => AllocCMD (Param3 RunGen Prim PrimType) (arr a)
-          -> CoreId
-          -> Length
-          -> RunGen (arr a, Length)
-compAlloc cmd coreId size = do
-    let (ty, incl) = getArrElemType cmd
+allocShared :: (ArrayWrapper arr, PrimType a)
+             => C.CGen C.Type -> Length -> RunGen (arr a, Length)
+allocShared cty size = do
+    (arr, size) <- allocLocal cty sharedId size
+    shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
+    modify (arrayRefName arr `describes` shmRef)
+    lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrapArr arr, valArg $ value size ]
+    return (arr, size)
+
+allocLocal :: (ArrayWrapper arr, PrimType a)
+          => C.CGen C.Type -> CoreId -> Length -> RunGen (arr a, Length)
+allocLocal cty coreId size = do
+    let (ty, env) = cGen cty
+        incl = C._includes env
         byteSize   = size * sizeOf ty
     (addr, name) <- state (allocate coreId byteSize)
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
     return (mkArrayRef name, byteSize)
-
-getArrElemType :: (CompExp Prim, CompTypeClass PrimType, PrimType a)
-           => AllocCMD (Param3 RunGen Prim PrimType) (proxy a)
-           -> (C.Type, Set.Set String)
-getArrElemType cmd =
-    let (ty, env) = cGen $ compType (proxyPred cmd) (proxyArg cmd)
-    in  (ty, C._includes env)
 
 instance Interp AllocCMD RunGen (Param2 Prim PrimType)
   where interp = compAllocCMD
@@ -220,7 +231,7 @@ compLocalCopy :: PrimType a => String
 compLocalCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
     (r, c) <- gets $ groupCoordsForName (arrayRefName spm)
-    lift $ addInclude "<e-feldspar.h>"
+    lift $ addInclude "<feldspar-parallella.h>"
     lift $ callProc op
         [ groupAddr
         , valArg $ value r
@@ -247,7 +258,7 @@ compSharedCopy :: PrimType a => String
                -> Data Index -> IndexRange -> RunGen ()
 compSharedCopy op spm ram offset (lower, upper) = do
     shmRef <- gets $ shmRefForName $ arrayRefName spm
-    lift $ addInclude "<e-feldspar.h>"
+    lift $ addInclude "<feldspar-parallella.h>"
     lift $ callProc op
         [ shmRef
         , arrArg ram
@@ -395,7 +406,7 @@ compCoreLocalCopy op spm ram offset (lower, upper) = do
     lift $ do
         addInclude "<string.h>"
         addInclude "<e-lib.h>"
-        addInclude "<e-feldspar.h>"
+        addInclude "<feldspar-parallella.h>"
         callProc op
             [ arrArg (unwrapArr spm)
             , arrArg ram
@@ -421,7 +432,7 @@ compCoreSharedCopy op spm ram offset (lower, upper) = do
     shmRef <- asks $ shmRefForName $ arrayRefName spm
     lift $ do
         addInclude "<e-lib.h>"
-        addInclude "<e-feldspar.h>"
+        addInclude "<feldspar-parallella.h>"
         callProc op
             [ arrArg (unwrapArr spm)
             , arrArg ram
