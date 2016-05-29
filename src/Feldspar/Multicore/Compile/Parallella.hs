@@ -68,11 +68,11 @@ compNewCoreChan cmd@(NewChan f t sz)
         (isFull :: LocalArr Bool, _) <- allocLocal bty cid 1
         (buf :: SharedArr a, shmRef) <- allocShared cty sz
         groupAddr <- gets group
-        hostAddr <- lift $ do
+        hostChan <- lift $ do
             addInclude "<feldspar-parallella.h>"
-            chanAddr <- addr . objArg <$> newNamedObject "chan" "host_chan_t" False
+            chan <- objArg <$> newNamedObject "chan" "host_chan_t" False
             callProc "init_host_chan"
-                [ chanAddr
+                [ addr chan
                 , groupAddr
                 , valArg $ value r
                 , valArg $ value c
@@ -80,8 +80,8 @@ compNewCoreChan cmd@(NewChan f t sz)
                 , arrArg $ unwrapArr isOpen
                 , arrArg $ unwrapArr isFull
                 ]
-            return chanAddr
-        return $ CoreChanComp $ HostChanRep hostAddr
+            return chan
+        return $ CoreChanComp $ HostChanRep hostChan
             [ arrArg $ unwrapArr buf, arrArg $ unwrapArr isOpen, arrArg $ unwrapArr isFull ]
     where
       isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
@@ -91,18 +91,18 @@ instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
 
 
 compHostCoreChanCMD :: CoreChanCMD (Param3 RunGen Data PrimType') a -> RunGen a
-compHostCoreChanCMD (ReadChan (CoreChanComp (HostChanRep chanAddr _)) off sz arr) = lift $ do
+compHostCoreChanCMD (ReadChan (CoreChanComp (HostChanRep hostChan _)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_read_c2h" [ chanAddr, arrArg arr, valArg off, valArg sz ]
-compHostCoreChanCMD (WriteOne (CoreChanComp (HostChanRep chanAddr _)) v) = lift $ do
+    callFun "host_read_c2h" [ hostChan, arrArg arr, valArg off, valArg sz ]
+compHostCoreChanCMD (WriteOne (CoreChanComp (HostChanRep hostChan _)) v) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_write_h2c" [ chanAddr, addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
-compHostCoreChanCMD (WriteChan (CoreChanComp (HostChanRep chanAddr _)) off sz arr) = lift $ do
+    callFun "host_write_h2c" [ hostChan, addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
+compHostCoreChanCMD (WriteChan (CoreChanComp (HostChanRep hostChan _)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_write_h2c" [ chanAddr, arrArg arr, valArg off, valArg sz ]
-compHostCoreChanCMD (CloseChan (CoreChanComp (HostChanRep chanAddr _))) = lift $ do
+    callFun "host_write_h2c" [ hostChan, arrArg arr, valArg off, valArg sz ]
+compHostCoreChanCMD (CloseChan (CoreChanComp (HostChanRep hostChan _))) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callProc "host_close_chan" [ chanAddr ]
+    callProc "host_close_chan" [ hostChan ]
 compHostCoreChanCMD (CloseChan _) =
     error "closeChan: unable to close core-to-core channel in host"
 
@@ -119,13 +119,13 @@ compCoreChanCMD (ReadChan (CoreChanComp (CoreChanRep chanArgs)) off sz arr) = li
         callFun "core_read_c2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
 compCoreChanCMD (WriteOne (CoreChanComp (HostChanRep _ chanArgs)) v) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "core_write_h2c" $ chanArgs ++ [ addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
+    callFun "core_write_c2h" $ chanArgs ++ [ addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
 compCoreChanCMD (WriteOne (CoreChanComp (CoreChanRep chanArgs)) v) = lift $ do
     addInclude "<feldspar-parallella.h>"
     callFun "core_write_c2c" $ chanArgs ++ [ addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
 compCoreChanCMD (WriteChan (CoreChanComp (HostChanRep _ chanArgs)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "core_write_h2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+    callFun "core_write_c2h" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
 compCoreChanCMD (WriteChan (CoreChanComp (CoreChanRep chanArgs)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
     callFun "core_write_c2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]

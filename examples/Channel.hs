@@ -95,7 +95,7 @@ twice inp out = forever $ do
 
 ------------------------------------------------------------
 
-test = vectors 3 -- primitives
+test = primitives
 
 testAll = do
     icompileAll `onParallella` test
