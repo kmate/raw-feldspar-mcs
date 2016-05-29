@@ -33,25 +33,57 @@ import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-{- TODO:
- * what kind of C types do we need?
- * implement the C API and test with manual allocation
- * do the appropriate allocations, collect the separate variables into
-   C structures if possible
--}
+compCoreChanAllocCMD :: forall a. CoreChanAllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
+compCoreChanAllocCMD cmd@(NewChan _ _ _) = compNewCoreChan cmd
 
-compCoreChanAllocCMD :: CoreChanAllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
-compCoreChanAllocCMD cmd@(NewChan f t sz)
+compNewCoreChan :: forall a. CoreChanAllocCMD (Param3 RunGen Prim PrimType) (CoreChan a) -> RunGen (CoreChan a)
+compNewCoreChan cmd@(NewChan f t sz)
     | isCoreToCore = do
+        let (r, c) = groupCoord t
+            bty = cType (Proxy :: Proxy Bool)
+            arg = proxyArg cmd
+            cty = compType (proxyPred cmd) arg
+        (isOpen :: LocalArr Bool, _) <- allocLocal bty t 1
+        (isFull :: LocalArr Bool, _) <- allocLocal bty t 1
+        (buf :: LocalArr a, _) <- allocLocal cty t sz
+        groupAddr <- gets group
         lift $ do
             addInclude "<feldspar-parallella.h>"
-            callProc "init_core_chan" []
-        return $ CoreChanComp CoreChanRep
+            callProc "init_core_chan"
+                [ groupAddr
+                , valArg $ value r
+                , valArg $ value c
+                , arrArg $ unwrapArr isOpen
+                , arrArg $ unwrapArr isFull
+                ]
+        return $ CoreChanComp $ CoreChanRep
+            (arrArg $ unwrapArr buf)
+            (arrArg $ unwrapArr isOpen)
+            (arrArg $ unwrapArr isFull)
     | otherwise = do
-        lift $ do
+        let cid = if f == hostId then t else f
+            (r, c) = groupCoord cid
+            bty = cType (Proxy :: Proxy Bool)
+            arg = proxyArg cmd
+            cty = compType (proxyPred cmd) arg
+        (isOpen :: LocalArr Bool, _) <- allocLocal bty cid 1
+        (isFull :: LocalArr Bool, _) <- allocLocal bty cid 1
+        (buf :: SharedArr a, shmRef) <- allocShared cty sz
+        groupAddr <- gets group
+        chanAddr <- lift $ do
             addInclude "<feldspar-parallella.h>"
-            callProc "init_host_chan" []
-        return $ CoreChanComp HostChanRep
+            chanAddr <- addr . objArg <$> newNamedObject "chan" "host_chan_t" False
+            callProc "init_host_chan"
+                [ chanAddr
+                , groupAddr
+                , valArg $ value r
+                , valArg $ value c
+                , shmRef
+                , arrArg $ unwrapArr isOpen
+                , arrArg $ unwrapArr isFull
+                ]
+            return chanAddr
+        return $ CoreChanComp $ HostChanRep chanAddr
     where
       isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
 
@@ -60,21 +92,44 @@ instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
 
 
 compHostCoreChanCMD :: CoreChanCMD (Param3 RunGen Data PrimType') a -> RunGen a
-compHostCoreChanCMD (WriteOne c v) = return $ ValComp "// TODO"
-compHostCoreChanCMD (ReadChan c off sz arr) = return $ ValComp "// TODO"
-compHostCoreChanCMD (WriteChan c off sz arr) = return $ ValComp "// TODO"
-compHostCoreChanCMD (CloseChan c) = lift $ do
+compHostCoreChanCMD (ReadChan (CoreChanComp (HostChanRep chanAddr)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callProc "host_close_chan" []
+    callFun "host_read_c2h"
+        [ chanAddr
+        , arrArg arr
+        , valArg off
+        , valArg sz
+        ]
+compHostCoreChanCMD (WriteOne (CoreChanComp (HostChanRep chanAddr)) v) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callFun "host_write_h2c"
+        [ chanAddr
+        , addr $ valArg v
+        , valArg (0 :: Data Length)
+        , valArg (1 :: Data Length)
+        ]
+compHostCoreChanCMD (WriteChan (CoreChanComp (HostChanRep chanAddr)) off sz arr) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callFun "host_write_h2c"
+        [ chanAddr
+        , arrArg arr
+        , valArg off
+        , valArg sz
+        ]
+compHostCoreChanCMD (CloseChan (CoreChanComp (HostChanRep chanAddr))) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callProc "host_close_chan" [ chanAddr ]
+compHostCoreChanCMD (CloseChan _) =
+    error "closeChan: unable to close core-to-core channel in host"
 
 instance Interp CoreChanCMD RunGen (Param2 Data PrimType')
   where interp = compHostCoreChanCMD
 
 
 compCoreChanCMD :: CoreChanCMD (Param3 CoreGen Data PrimType') a -> CoreGen a
-compCoreChanCMD (WriteOne c v) = return $ ValComp "// TODO"
-compCoreChanCMD (ReadChan c off sz arr) = return $ ValComp "// TODO"
-compCoreChanCMD (WriteChan c off sz arr) = return $ ValComp "// TODO"
+compCoreChanCMD (WriteOne c v) = return false
+compCoreChanCMD (ReadChan c off sz arr) = return false
+compCoreChanCMD (WriteChan c off sz arr) = return false
 compCoreChanCMD (CloseChan c) = lift $ do
     addInclude "<feldspar-parallella.h>"
     callProc "core_close_chan" []
@@ -140,13 +195,13 @@ compAllocCMD (OnHost host) = do
     lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
 
 allocShared :: (ArrayWrapper arr, PrimType a)
-             => C.CGen C.Type -> Length -> RunGen (arr a, Length)
+             => C.CGen C.Type -> Length -> RunGen (arr a, FunArg Data PrimType')
 allocShared cty size = do
     (arr, size) <- allocLocal cty sharedId size
     shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
     modify (arrayRefName arr `describes` shmRef)
     lift $ callProc "e_alloc" [ shmRef, arrArg $ unwrapArr arr, valArg $ value size ]
-    return (arr, size)
+    return (arr, shmRef)
 
 allocLocal :: (ArrayWrapper arr, PrimType a)
           => C.CGen C.Type -> CoreId -> Length -> RunGen (arr a, Length)

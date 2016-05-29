@@ -6,7 +6,6 @@ import Control.Monad.Trans
 import Data.Ix
 import Data.Proxy
 import Data.Typeable
-import Data.TypedStruct
 
 import Feldspar hiding ((==))
 import Feldspar.Data.Vector hiding (ofLength, VecChanSizeSpec)
@@ -89,9 +88,8 @@ instance PrimType a => CoreTransferable' Host (Data a)
     newSlot _ = newArr 1
     getSlot = getArr 0
 
-    readChan (CoreChan _ c) (Arr _ (Single (arr)))
-      = Host $ readChanBuf' c 0 1 arr
-    writeChan (CoreChan _ c) x = Host $ writeChan' c x
+    readChan  (CoreChan _ c) = Host . readChanBuf' c 0 1
+    writeChan (CoreChan _ c) = Host . writeChan' c
     closeChan (CoreChan _ c) = Host $ closeChan' c
 
 instance PrimType a => CoreTransferable' CoreComp (Data a)
@@ -100,9 +98,8 @@ instance PrimType a => CoreTransferable' CoreComp (Data a)
     newSlot _ = newArr 1
     getSlot = getArr 0
 
-    readChan (CoreChan _ c) (Arr _ (Single (arr)))
-      = CoreComp $ readChanBuf' c 0 1 arr
-    writeChan (CoreChan _ c) x = CoreComp $ writeChan' c x
+    readChan  (CoreChan _ c) = CoreComp . readChanBuf' c 0 1
+    writeChan (CoreChan _ c) = CoreComp . writeChan' c
     closeChan (CoreChan _ c) = CoreComp $ closeChan' c
 
 instance (Monad m, PrimType a) => CoreTransferType m (Data a) (Data a)
@@ -125,10 +122,10 @@ instance PrimType a => CoreTransferable' Host (Store (DPull a))
     newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
     getSlot = return
 
-    readChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
+    readChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
         l :: Data Length <- unsafeFreezeRef lenRef
         Host $ readChanBuf' c 0 l arr
-    writeChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
+    writeChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
         l :: Data Length <- unsafeFreezeRef lenRef
         Host $ writeChanBuf' c 0 l arr
     closeChan (CoreChan _ c) = Host $ closeChan' c
@@ -139,10 +136,10 @@ instance PrimType a => CoreTransferable' CoreComp (Store (DPull a))
     newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
     getSlot = return
 
-    readChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
+    readChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
         l :: Data Length <- unsafeFreezeRef lenRef
         CoreComp $ readChanBuf' c 0 l arr
-    writeChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
+    writeChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
         l :: Data Length <- unsafeFreezeRef lenRef
         CoreComp $ writeChanBuf' c 0 l arr
     closeChan (CoreChan _ c) = CoreComp $ closeChan' c
@@ -186,15 +183,14 @@ instance (MonadComp m, PrimType a) => CoreTransferType m (Dim1 (Arr a)) (Store (
 --------------------------------------------------------------------------------
 
 readChanBuf' :: ( Typeable a, pred a
-                , Ix i, Integral i
                 , Imp.FreeExp exp, Imp.FreePred exp Bool
                 , Rep.CoreChanCMD :<: instr, Monad m )
               => Rep.CoreChan a
-             -> exp i -- ^ Offset in array to start writing
-             -> exp i -- ^ Elements to read
-             -> Imp.Arr i a
+             -> exp Index -- ^ Offset in array to start writing
+             -> exp Index -- ^ Elements to read
+             -> Arr a
              -> ProgramT instr (Param2 exp pred) m (exp Bool)
-readChanBuf' ch off sz arr = fmap Imp.valToExp . singleInj $ Rep.ReadChan ch off sz arr
+readChanBuf' ch off sz arr = singleInj $ Rep.ReadChan ch off sz arr
 
 writeChan' :: ( Typeable a, pred a
               , Imp.FreeExp exp, Imp.FreePred exp Bool
@@ -202,18 +198,17 @@ writeChan' :: ( Typeable a, pred a
            => Rep.CoreChan a
            -> exp a
            -> ProgramT instr (Param2 exp pred) m (exp Bool)
-writeChan' c = fmap Imp.valToExp . singleInj . Rep.WriteOne c
+writeChan' c = singleInj . Rep.WriteOne c
 
 writeChanBuf' :: ( Typeable a, pred a
-                 , Ix i, Integral i
                  , Imp.FreeExp exp, Imp.FreePred exp Bool
                  , Rep.CoreChanCMD :<: instr, Monad m )
               => Rep.CoreChan a
-              -> exp i -- ^ Offset in array to start reading
-              -> exp i -- ^ Elements to write
-              -> Imp.Arr i a
+              -> exp Index -- ^ Offset in array to start reading
+              -> exp Index -- ^ Elements to write
+              -> Arr a
               -> ProgramT instr (Param2 exp pred) m (exp Bool)
-writeChanBuf' ch off sz arr = fmap Imp.valToExp . singleInj $ Rep.WriteChan ch off sz arr
+writeChanBuf' ch off sz arr = singleInj $ Rep.WriteChan ch off sz arr
 
 closeChan' :: (Rep.CoreChanCMD :<: instr)
            => Rep.CoreChan a

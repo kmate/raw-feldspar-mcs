@@ -6,6 +6,7 @@ import Control.Monad.Trans
 import Data.Ix
 import Data.Proxy
 import Data.Typeable
+import Data.TypedStruct
 import GHC.Exts (Constraint)
 
 import Feldspar
@@ -27,8 +28,8 @@ data CoreChan (a :: *)
   | CoreChanComp ChanCompRep
 
 data ChanCompRep
-  = HostChanRep
-  | CoreChanRep
+  = HostChanRep (FunArg Data PrimType')
+  | CoreChanRep (FunArg Data PrimType') (FunArg Data PrimType') (FunArg Data PrimType')
 
 
 data CoreChanAllocCMD fs a where
@@ -63,16 +64,17 @@ instance Interp CoreChanAllocCMD Run (Param2 Prim PrimType)
 
 
 data CoreChanCMD fs a where
+  ReadChan  :: (Typeable a, pred a)
+            => CoreChan c -> exp Index -> exp Index
+            -> Arr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
+
   WriteOne  :: (Typeable a, pred a)
             => CoreChan a -> exp a
-            -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
+            -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
 
-  ReadChan  :: (Typeable a, pred a, Ix i, Integral i)
-            => CoreChan c -> exp i -> exp i
-            -> Imp.Arr i a -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
-  WriteChan :: (Typeable a, pred a, Ix i, Integral i)
-            => CoreChan c -> exp i -> exp i
-            -> Imp.Arr i a -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
+  WriteChan :: (Typeable a, pred a)
+            => CoreChan c -> exp Index -> exp Index
+            -> Arr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
 
   CloseChan :: CoreChan a -> CoreChanCMD (Param3 prog exp pred) ()
 
@@ -83,29 +85,13 @@ instance HFunctor CoreChanCMD where
   hfmap _ (WriteChan c f t a) = WriteChan c f t a
   hfmap _ (CloseChan c)       = CloseChan c
 
-instance HBifunctor CoreChanCMD where
-  hbimap _ f (ReadChan c n n' a)  = ReadChan c (f n) (f n') a
-  hbimap _ f (WriteOne c x)       = WriteOne c (f x)
-  hbimap _ f (WriteChan c n n' a) = WriteChan c (f n) (f n') a
-  hbimap _ _ (CloseChan c)        = CloseChan c
-
-instance (CoreChanCMD :<: instr) => Reexpressible CoreChanCMD instr where
-  reexpressInstrEnv reexp (ReadChan c f t a) = do
-      rf <- reexp f
-      rt <- reexp t
-      lift $ singleInj $ ReadChan c rf rt a
-  reexpressInstrEnv reexp (WriteOne c x) = lift . singleInj . WriteOne c =<< reexp x
-  reexpressInstrEnv reexp (WriteChan c f t a) = do
-      rf <- reexp f
-      rt <- reexp t
-      lift $ singleInj $ WriteChan c rf rt a
-  reexpressInstrEnv reexp (CloseChan c)   = lift $ singleInj $ CloseChan c
-
-
 runCoreChanCMD :: CoreChanCMD (Param3 Run Data PrimType') a -> Run a
-runCoreChanCMD (WriteOne (CoreChanRun c) v) = Run $ singleInj $ Imp.WriteOne c v
-runCoreChanCMD (ReadChan (CoreChanRun c) off sz arr) = Run $ singleInj $ Imp.ReadChan c off sz arr
-runCoreChanCMD (WriteChan (CoreChanRun c) off sz arr) = Run $ singleInj $ Imp.WriteChan c off sz arr
+runCoreChanCMD (WriteOne (CoreChanRun c) v) =
+    Run $ (fmap Imp.valToExp) $ singleInj $ Imp.WriteOne c v
+runCoreChanCMD (ReadChan (CoreChanRun c) off sz (Arr _ (Single arr))) =
+    Run $ (fmap Imp.valToExp) $ singleInj $ Imp.ReadChan c off sz arr
+runCoreChanCMD (WriteChan (CoreChanRun c) off sz (Arr _ (Single arr))) =
+    Run $ (fmap Imp.valToExp) $ singleInj $ Imp.WriteChan c off sz arr
 runCoreChanCMD (CloseChan (CoreChanRun c)) = Run $ Imp.closeChan c
 
 instance Interp CoreChanCMD Run (Param2 Data PrimType')

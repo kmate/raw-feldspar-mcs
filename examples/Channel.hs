@@ -22,7 +22,7 @@ primitives = do
             item :: Data Int32 <- getSlot slot
             printf "> %d\n" item
 
-        closeChan c1
+        closeChan c0
         closeChan c2
 
 
