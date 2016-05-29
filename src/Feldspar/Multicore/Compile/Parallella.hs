@@ -33,15 +33,42 @@ import Language.Embedded.Expression
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
+{- TODO:
+ * what kind of C types do we need?
+ * implement the C API and test with manual allocation
+ * do the appropriate allocations, collect the separate variables into
+   C structures if possible
+-}
+
+compCoreChanAllocCMD :: CoreChanAllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
+compCoreChanAllocCMD cmd@(NewChan f t sz)
+  | isCoreToCore = return $ CoreChanComp CoreChanRep
+  | otherwise    = return $ CoreChanComp HostChanRep
+  where
+    isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
 
 instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
-  where interp = error "TODO"
+  where interp = compCoreChanAllocCMD
+
+
+compHostCoreChanCMD :: CoreChanCMD (Param3 RunGen Data PrimType') a -> RunGen a
+compHostCoreChanCMD (WriteOne c v) =  error "TODO"
+compHostCoreChanCMD (ReadChan c off sz arr) = error "TODO"
+compHostCoreChanCMD (WriteChan c off sz arr) = error "TODO"
+compHostCoreChanCMD (CloseChan c) = error "TODO"
 
 instance Interp CoreChanCMD RunGen (Param2 Data PrimType')
-  where interp = error "TODO"
+  where interp = compHostCoreChanCMD
+
+
+compCoreChanCMD :: CoreChanCMD (Param3 CoreGen Data PrimType') a -> CoreGen a
+compCoreChanCMD (WriteOne c v) = error "TODO"
+compCoreChanCMD (ReadChan c off sz arr) = error "TODO"
+compCoreChanCMD (WriteChan c off sz arr) = error "TODO"
+compCoreChanCMD (CloseChan c) = error "TODO"
 
 instance Interp CoreChanCMD CoreGen (Param2 Data PrimType')
-  where interp = error "TODO"
+  where interp = compCoreChanCMD
 
 
 

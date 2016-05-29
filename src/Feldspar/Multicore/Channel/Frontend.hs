@@ -57,17 +57,18 @@ class    (CoreTransferable' Host a, CoreTransferable' CoreComp a) => CoreTransfe
 instance (CoreTransferable' Host a, CoreTransferable' CoreComp a) => CoreTransferable a
 
 
-instance Num (SizeSpec (Data a))
-  where
-    fromInteger n = PrimChanSizeSpec $ fromIntegral n
-    (PrimChanSizeSpec n) + (PrimChanSizeSpec m) = PrimChanSizeSpec $ n + m
-    (PrimChanSizeSpec n) - (PrimChanSizeSpec m) = PrimChanSizeSpec $ n - m
-    (PrimChanSizeSpec n) * (PrimChanSizeSpec m) = PrimChanSizeSpec $ n * m
-    abs (PrimChanSizeSpec n) = PrimChanSizeSpec $ abs n
-    signum (PrimChanSizeSpec n) = PrimChanSizeSpec $ signum n
+one :: PrimType a => SizeSpec (Data a)
+one = SingleItem
 
-ofLength :: Length -> Length -> SizeSpec (Store (DPull a))
-ofLength = VecChanSizeSpec
+
+instance Num (SizeSpec (Store (DPull a)))
+  where
+    fromInteger n = VecChanSizeSpec $ fromIntegral n
+    (VecChanSizeSpec n) + (VecChanSizeSpec m) = VecChanSizeSpec $ n + m
+    (VecChanSizeSpec n) - (VecChanSizeSpec m) = VecChanSizeSpec $ n - m
+    (VecChanSizeSpec n) * (VecChanSizeSpec m) = VecChanSizeSpec $ n * m
+    abs (VecChanSizeSpec n) = VecChanSizeSpec $ abs n
+    signum (VecChanSizeSpec n) = VecChanSizeSpec $ signum n
 
 
 --------------------------------------------------------------------------------
@@ -77,34 +78,30 @@ ofLength = VecChanSizeSpec
 instance PrimType a => CoreChanType (Data a)
   where
     type ElemType (Data a) = a
-    data SizeSpec (Data a) = PrimChanSizeSpec Length
-    newChan f t sz@(PrimChanSizeSpec l)
+    data SizeSpec (Data a) = SingleItem
+    newChan f t sz
       = Multicore $ fmap (CoreChan sz) $ singleInj
-      $ Rep.NewChan f t l
+      $ Rep.NewChan f t 1
 
 instance PrimType a => CoreTransferable' Host (Data a)
   where
-    type Slot (Data a) = Ref a
-    newSlot _ = newRef
-    getSlot = getRef
+    type Slot (Data a) = Arr a
+    newSlot _ = newArr 1
+    getSlot = getArr 0
 
-    readChan (CoreChan _ c) s = do
-        v <- Host $ readChan' c
-        setRef s v
-        Host $ lastChanReadOK' c
+    readChan (CoreChan _ c) (Arr _ (Single (arr)))
+      = Host $ readChanBuf' c 0 1 arr
     writeChan (CoreChan _ c) x = Host $ writeChan' c x
     closeChan (CoreChan _ c) = Host $ closeChan' c
 
 instance PrimType a => CoreTransferable' CoreComp (Data a)
   where
-    type Slot (Data a) = Ref a
-    newSlot _ = newRef
-    getSlot = getRef
+    type Slot (Data a) = Arr a
+    newSlot _ = newArr 1
+    getSlot = getArr 0
 
-    readChan (CoreChan _ c) s = do
-        v <- CoreComp $ readChan' c
-        setRef s v
-        CoreComp $ lastChanReadOK' c
+    readChan (CoreChan _ c) (Arr _ (Single (arr)))
+      = CoreComp $ readChanBuf' c 0 1 arr
     writeChan (CoreChan _ c) x = CoreComp $ writeChan' c x
     closeChan (CoreChan _ c) = CoreComp $ closeChan' c
 
@@ -117,15 +114,15 @@ instance (Monad m, PrimType a) => CoreTransferType m (Data a) (Data a)
 instance PrimType a => CoreChanType (Store (DPull a))
   where
     type ElemType (Store (DPull a)) = a
-    data SizeSpec (Store (DPull a)) = VecChanSizeSpec Length Length
-    newChan f t sz@(VecChanSizeSpec n m)
+    data SizeSpec (Store (DPull a)) = VecChanSizeSpec Length
+    newChan f t sz@(VecChanSizeSpec l)
       = Multicore $ fmap (CoreChan sz) $ singleInj
-      $ Rep.NewChan f t (n * m)
+      $ Rep.NewChan f t l
 
 instance PrimType a => CoreTransferable' Host (Store (DPull a))
   where
     type Slot (Store (DPull a)) = Store (DPull a)
-    newSlot (CoreChan (VecChanSizeSpec _ l) _) = newStore $ value l
+    newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
     getSlot = return
 
     readChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
@@ -139,7 +136,7 @@ instance PrimType a => CoreTransferable' Host (Store (DPull a))
 instance PrimType a => CoreTransferable' CoreComp (Store (DPull a))
   where
     type Slot (Store (DPull a)) = Store (DPull a)
-    newSlot (CoreChan (VecChanSizeSpec _ l) _) = newStore $ value l
+    newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
     getSlot = return
 
     readChan (CoreChan _ c) s@(Store (lenRef, (Arr _ (Single (arr))))) = do
@@ -188,13 +185,6 @@ instance (MonadComp m, PrimType a) => CoreTransferType m (Dim1 (Arr a)) (Store (
 -- Representation wrappers
 --------------------------------------------------------------------------------
 
-readChan' :: ( Typeable a, pred a
-             , Imp.FreeExp exp, Imp.FreePred exp a
-             , Rep.CoreChanCMD :<: instr, Monad m )
-          => Rep.CoreChan a
-          -> ProgramT instr (Param2 exp pred) m (exp a)
-readChan' = fmap Imp.valToExp . singleInj . Rep.ReadOne
-
 readChanBuf' :: ( Typeable a, pred a
                 , Ix i, Integral i
                 , Imp.FreeExp exp, Imp.FreePred exp Bool
@@ -229,9 +219,3 @@ closeChan' :: (Rep.CoreChanCMD :<: instr)
            => Rep.CoreChan a
            -> ProgramT instr (Param2 exp pred) m ()
 closeChan' = singleInj . Rep.CloseChan
-
-lastChanReadOK' :: ( Imp.FreeExp exp, Imp.FreePred exp Bool
-                   , Rep.CoreChanCMD :<: instr, Monad m)
-                => Rep.CoreChan a
-                -> ProgramT instr (Param2 exp pred) m (exp Bool)
-lastChanReadOK' = fmap Imp.valToExp . singleInj . Rep.ReadOK

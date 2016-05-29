@@ -2,6 +2,7 @@ module Zeldspar.Multicore.Frontend where
 
 import Control.Monad.Trans as C (lift)
 
+import Feldspar
 import Feldspar.Run.Representation
 import Feldspar.Multicore.CoreId
 import Feldspar.Multicore.Channel.Frontend
@@ -36,6 +37,16 @@ on = OnCore . liftOut toTransfer . liftIn fromTransfer
 
 infixl 1 |>>
 infixl 1 >>|
+
+
+(|>>>|) :: PrimType mid
+        => MulticoreZ inp (Data mid) a
+        -> MulticoreZ (Data mid) out b
+        -> MulticoreZ inp out ()
+(|>>>|) = Connect one
+
+infixl 1 |>>>|
+
 
 liftHost :: Run a -> Host a
 liftHost = C.lift

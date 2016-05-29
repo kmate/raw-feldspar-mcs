@@ -107,7 +107,7 @@ testBit a i = a .&. (1 .<<. i2n i) /= 0
 testFFT :: String -> Multicore ()
 testFFT inputFile = do
     let n = 8
-        chanSize = 10 `ofLength` n
+        chanSize = 10
     (h, inp) <- onHost $ do
         h <- liftHost $ fopen inputFile ReadMode
         input <- newArr (value n)

@@ -24,7 +24,11 @@ import qualified Language.Embedded.Imperative as Imp
 
 data CoreChan (a :: *)
   = CoreChanRun (Imp.Chan Imp.Closeable a)
-  | CoreChanComp
+  | CoreChanComp ChanCompRep
+
+data ChanCompRep
+  = HostChanRep
+  | CoreChanRep
 
 
 data CoreChanAllocCMD fs a where
@@ -59,8 +63,6 @@ instance Interp CoreChanAllocCMD Run (Param2 Prim PrimType)
 
 
 data CoreChanCMD fs a where
-  ReadOne   :: (Typeable a, pred a)
-            => CoreChan a -> CoreChanCMD (Param3 prog exp pred) (Imp.Val a)
   WriteOne  :: (Typeable a, pred a)
             => CoreChan a -> exp a
             -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
@@ -73,27 +75,21 @@ data CoreChanCMD fs a where
             -> Imp.Arr i a -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
 
   CloseChan :: CoreChan a -> CoreChanCMD (Param3 prog exp pred) ()
-  ReadOK    :: CoreChan a -> CoreChanCMD (Param3 prog exp pred) (Imp.Val Bool)
 
 
 instance HFunctor CoreChanCMD where
-  hfmap _ (ReadOne c)         = ReadOne c
   hfmap _ (ReadChan c f t a)  = ReadChan c f t a
   hfmap _ (WriteOne c x)      = WriteOne c x
   hfmap _ (WriteChan c f t a) = WriteChan c f t a
   hfmap _ (CloseChan c)       = CloseChan c
-  hfmap _ (ReadOK c)          = ReadOK c
 
 instance HBifunctor CoreChanCMD where
-  hbimap _ _ (ReadOne c)          = ReadOne c
   hbimap _ f (ReadChan c n n' a)  = ReadChan c (f n) (f n') a
   hbimap _ f (WriteOne c x)       = WriteOne c (f x)
   hbimap _ f (WriteChan c n n' a) = WriteChan c (f n) (f n') a
   hbimap _ _ (CloseChan c)        = CloseChan c
-  hbimap _ _ (ReadOK c)           = ReadOK c
 
 instance (CoreChanCMD :<: instr) => Reexpressible CoreChanCMD instr where
-  reexpressInstrEnv reexp (ReadOne c) = lift $ singleInj $ ReadOne c
   reexpressInstrEnv reexp (ReadChan c f t a) = do
       rf <- reexp f
       rt <- reexp t
@@ -104,16 +100,13 @@ instance (CoreChanCMD :<: instr) => Reexpressible CoreChanCMD instr where
       rt <- reexp t
       lift $ singleInj $ WriteChan c rf rt a
   reexpressInstrEnv reexp (CloseChan c)   = lift $ singleInj $ CloseChan c
-  reexpressInstrEnv reexp (ReadOK c)      = lift $ singleInj $ ReadOK c
 
 
 runCoreChanCMD :: CoreChanCMD (Param3 Run Data PrimType') a -> Run a
-runCoreChanCMD (ReadOne (CoreChanRun c)) = Run $ singleInj $ Imp.ReadOne c
 runCoreChanCMD (WriteOne (CoreChanRun c) v) = Run $ singleInj $ Imp.WriteOne c v
 runCoreChanCMD (ReadChan (CoreChanRun c) off sz arr) = Run $ singleInj $ Imp.ReadChan c off sz arr
 runCoreChanCMD (WriteChan (CoreChanRun c) off sz arr) = Run $ singleInj $ Imp.WriteChan c off sz arr
 runCoreChanCMD (CloseChan (CoreChanRun c)) = Run $ Imp.closeChan c
-runCoreChanCMD (ReadOK (CoreChanRun c)) = Run $ singleInj $ Imp.ReadOK c
 
 instance Interp CoreChanCMD Run (Param2 Data PrimType')
   where interp = runCoreChanCMD

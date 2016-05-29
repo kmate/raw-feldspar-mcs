@@ -77,5 +77,6 @@ test-suite Tests
 
   build-depends:
     base,
+    raw-feldspar,
     raw-feldspar-mcs
 

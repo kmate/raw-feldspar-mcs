@@ -47,8 +47,8 @@ vector = runZ
     writeOutput
     chanSize
   where
-    vecSize  = 5
-    chanSize = 10`ofLength`vecSize
+    vecSize = 5
+    chanSize = 5
     readInput :: Host (DPull Int32, Data Bool)
     readInput = liftHost $ do
         input <- newArr $ value vecSize

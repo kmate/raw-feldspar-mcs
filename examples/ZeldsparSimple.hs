@@ -7,13 +7,12 @@ import Zeldspar.Multicore
 
 simple :: Multicore ()
 simple = do
-    let chanSize = 10
     runZ
-        (inc `on` 0 |>>chanSize>>| twice `on` 1)
+        (inc `on` 0 |>>>| twice `on` 1)
         readInput
-        chanSize
+        one
         writeOutput
-        chanSize
+        one
   where
     readInput :: Host (Data Int32, Data Bool)
     readInput = liftHost $ fget stdin >>= \i -> return (i, true)
