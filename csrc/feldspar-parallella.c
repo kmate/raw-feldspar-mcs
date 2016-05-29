@@ -58,15 +58,17 @@ bool _host_write_h2c(host_chan_t chan, void *src, size_t off, size_t len) {
 bool _host_read_c2h(host_chan_t chan, void *dst, size_t off, size_t len) {
   // wait for an item
   bool is_full[1] = { false };
-  do {
+  host_read_local(chan.g, chan.r, chan.c, chan.is_full, is_full, 0, 0, 0);
+  while (!*is_full) {
     bool is_open[1] = { true };
     host_read_local(chan.g, chan.r, chan.c, chan.is_open, is_open, 0, 0, 0);
     if (!*is_open) {
       // do not wait for a closed channel to be filled
       return false;
     }
+    wait(HOST_CHANNEL_POLL_NSEC);
     host_read_local(chan.g, chan.r, chan.c, chan.is_full, is_full, 0, 0, 0);
-  } while (!*is_full && !wait(HOST_CHANNEL_POLL_NSEC));
+  }
   // read item and set channel empty
   host_read_shared(chan.buf, dst, 0, off, off + len - 1);
   *is_full = false;
@@ -102,12 +104,12 @@ bool _core_read_h2c(volatile void *const buf,
                     volatile bool *const is_open,
                     volatile bool *const is_full,
                     void *dst, size_t off, size_t len) {
-  do {
+  while (!*is_full) {
     if (!*is_open) {
       // do not wait for a closed channel to be filled
       return false;
     }
-  } while (!*is_full);
+  }
   core_read_shared(buf, dst, 0, off, off + len - 1);
   *is_full = false;
   return true;
@@ -132,12 +134,12 @@ bool _core_read_c2c(volatile void *const buf,
                     volatile bool *const is_open,
                     volatile bool *const is_full,
                     void *dst, size_t off, size_t len) {
-  do {
+  while (!*is_full) {
     if (!*is_open) {
       // do not wait for a closed channel to be filled
       return false;
     }
-  } while (!*is_full);
+  }
   core_read_local(buf, dst, 0, off, off + len - 1);
   *is_full = false;
   return true;
