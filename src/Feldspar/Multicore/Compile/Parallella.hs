@@ -57,9 +57,7 @@ compNewCoreChan cmd@(NewChan f t sz)
                 , arrArg $ unwrapArr isFull
                 ]
         return $ CoreChanComp $ CoreChanRep
-            (arrArg $ unwrapArr buf)
-            (arrArg $ unwrapArr isOpen)
-            (arrArg $ unwrapArr isFull)
+            [ arrArg $ unwrapArr buf, arrArg $ unwrapArr isOpen, arrArg $ unwrapArr isFull ]
     | otherwise = do
         let cid = if f == hostId then t else f
             (r, c) = groupCoord cid
@@ -70,7 +68,7 @@ compNewCoreChan cmd@(NewChan f t sz)
         (isFull :: LocalArr Bool, _) <- allocLocal bty cid 1
         (buf :: SharedArr a, shmRef) <- allocShared cty sz
         groupAddr <- gets group
-        chanAddr <- lift $ do
+        hostAddr <- lift $ do
             addInclude "<feldspar-parallella.h>"
             chanAddr <- addr . objArg <$> newNamedObject "chan" "host_chan_t" False
             callProc "init_host_chan"
@@ -83,7 +81,8 @@ compNewCoreChan cmd@(NewChan f t sz)
                 , arrArg $ unwrapArr isFull
                 ]
             return chanAddr
-        return $ CoreChanComp $ HostChanRep chanAddr
+        return $ CoreChanComp $ HostChanRep hostAddr
+            [ arrArg $ unwrapArr buf, arrArg $ unwrapArr isOpen, arrArg $ unwrapArr isFull ]
     where
       isCoreToCore = f Prelude./= hostId Prelude.&& t Prelude./= hostId
 
@@ -92,31 +91,16 @@ instance Interp CoreChanAllocCMD RunGen (Param2 Prim PrimType)
 
 
 compHostCoreChanCMD :: CoreChanCMD (Param3 RunGen Data PrimType') a -> RunGen a
-compHostCoreChanCMD (ReadChan (CoreChanComp (HostChanRep chanAddr)) off sz arr) = lift $ do
+compHostCoreChanCMD (ReadChan (CoreChanComp (HostChanRep chanAddr _)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_read_c2h"
-        [ chanAddr
-        , arrArg arr
-        , valArg off
-        , valArg sz
-        ]
-compHostCoreChanCMD (WriteOne (CoreChanComp (HostChanRep chanAddr)) v) = lift $ do
+    callFun "host_read_c2h" [ chanAddr, arrArg arr, valArg off, valArg sz ]
+compHostCoreChanCMD (WriteOne (CoreChanComp (HostChanRep chanAddr _)) v) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_write_h2c"
-        [ chanAddr
-        , addr $ valArg v
-        , valArg (0 :: Data Length)
-        , valArg (1 :: Data Length)
-        ]
-compHostCoreChanCMD (WriteChan (CoreChanComp (HostChanRep chanAddr)) off sz arr) = lift $ do
+    callFun "host_write_h2c" [ chanAddr, addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
+compHostCoreChanCMD (WriteChan (CoreChanComp (HostChanRep chanAddr _)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callFun "host_write_h2c"
-        [ chanAddr
-        , arrArg arr
-        , valArg off
-        , valArg sz
-        ]
-compHostCoreChanCMD (CloseChan (CoreChanComp (HostChanRep chanAddr))) = lift $ do
+    callFun "host_write_h2c" [ chanAddr, arrArg arr, valArg off, valArg sz ]
+compHostCoreChanCMD (CloseChan (CoreChanComp (HostChanRep chanAddr _))) = lift $ do
     addInclude "<feldspar-parallella.h>"
     callProc "host_close_chan" [ chanAddr ]
 compHostCoreChanCMD (CloseChan _) =
@@ -127,12 +111,29 @@ instance Interp CoreChanCMD RunGen (Param2 Data PrimType')
 
 
 compCoreChanCMD :: CoreChanCMD (Param3 CoreGen Data PrimType') a -> CoreGen a
-compCoreChanCMD (WriteOne c v) = return false
-compCoreChanCMD (ReadChan c off sz arr) = return false
-compCoreChanCMD (WriteChan c off sz arr) = return false
-compCoreChanCMD (CloseChan c) = lift $ do
+compCoreChanCMD (ReadChan (CoreChanComp (HostChanRep _ chanArgs)) off sz arr) = lift $ do
+        addInclude "<feldspar-parallella.h>"
+        callFun "core_read_h2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+compCoreChanCMD (ReadChan (CoreChanComp (CoreChanRep chanArgs)) off sz arr) = lift $ do
+        addInclude "<feldspar-parallella.h>"
+        callFun "core_read_c2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+compCoreChanCMD (WriteOne (CoreChanComp (HostChanRep _ chanArgs)) v) = lift $ do
     addInclude "<feldspar-parallella.h>"
-    callProc "core_close_chan" []
+    callFun "core_write_h2c" $ chanArgs ++ [ addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
+compCoreChanCMD (WriteOne (CoreChanComp (CoreChanRep chanArgs)) v) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callFun "core_write_c2c" $ chanArgs ++ [ addr $ valArg v, valArg (0 :: Data Length), valArg (1 :: Data Length) ]
+compCoreChanCMD (WriteChan (CoreChanComp (HostChanRep _ chanArgs)) off sz arr) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callFun "core_write_h2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+compCoreChanCMD (WriteChan (CoreChanComp (CoreChanRep chanArgs)) off sz arr) = lift $ do
+    addInclude "<feldspar-parallella.h>"
+    callFun "core_write_c2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+compCoreChanCMD (CloseChan (CoreChanComp (CoreChanRep chanArgs))) = lift $ do
+        addInclude "<feldspar-parallella.h>"
+        callProc "host_close_chan" chanArgs
+compCoreChanCMD (CloseChan _) =
+    error "closeChan: unable to close host channel in core"
 
 instance Interp CoreChanCMD CoreGen (Param2 Data PrimType')
   where interp = compCoreChanCMD
@@ -523,6 +524,7 @@ type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
 type SharedMemRef = FunArg Data PrimType'
 type SharedMemMap = Map.Map Name SharedMemRef
+type ArrayRef = FunArg Data PrimType'
 data RGState = RGState
     { group   :: FunArg Data PrimType'
     , nextId  :: Int

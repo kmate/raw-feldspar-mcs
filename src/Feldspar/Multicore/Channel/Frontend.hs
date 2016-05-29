@@ -89,7 +89,7 @@ instance PrimType a => CoreTransferable' Host (Data a)
     getSlot = getArr 0
 
     readChan  (CoreChan _ c) = Host . readChanBuf' c 0 1
-    writeChan (CoreChan _ c) = Host . writeChan' c
+    writeChan (CoreChan _ c) = lift . force >=> Host . writeChan' c
     closeChan (CoreChan _ c) = Host $ closeChan' c
 
 instance PrimType a => CoreTransferable' CoreComp (Data a)
@@ -99,7 +99,7 @@ instance PrimType a => CoreTransferable' CoreComp (Data a)
     getSlot = getArr 0
 
     readChan  (CoreChan _ c) = CoreComp . readChanBuf' c 0 1
-    writeChan (CoreChan _ c) = CoreComp . writeChan' c
+    writeChan (CoreChan _ c) = lift . force >=> CoreComp . writeChan' c
     closeChan (CoreChan _ c) = CoreComp $ closeChan' c
 
 instance (Monad m, PrimType a) => CoreTransferType m (Data a) (Data a)

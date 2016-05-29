@@ -70,7 +70,7 @@ vectors vecSize = do
                 let item :: Data Int32 = output ! i
                 printf "> %d\n" item
 
-        closeChan c1
+        closeChan c0
         closeChan c2
 
 
@@ -95,7 +95,7 @@ twice inp out = forever $ do
 
 ------------------------------------------------------------
 
-test = primitives
+test = vectors 3 -- primitives
 
 testAll = do
     icompileAll `onParallella` test

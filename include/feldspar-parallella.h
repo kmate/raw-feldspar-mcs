@@ -96,52 +96,51 @@ void fast_memcpy(void *dst, const void *src, size_t bytes);
 #define core_read_shared(src, dst, offset, lower, upper) \
     e_dma_copy((void*)((dst) + (lower)), (void*)(e_emem_config.base + (src) + (offset) * sizeof(*dst)), ((upper) - (lower) + 1) * sizeof(*dst))
 
-// host-to-core, core-to-core and core-to-host channel wrapper for cores
-
-typedef struct core_chan {
-  volatile void *buf;
-  volatile bool *is_open;
-  volatile bool *is_full;
-} core_chan_t;
-
-// creates a channel wrapper
-
-void core_make_chan(core_chan_t *chan,
-                    volatile void *const buf,
-                    volatile bool *const is_open,
-                    volatile bool *const is_full);
-
 // core-to-host channel write
 
-#define core_write_c2h(chan, src, off, len) \
-    _core_write_c2h((chan), (src), (off) * sizeof(*src), (len) * sizeof(*src));
+#define core_write_c2h(buf, is_open, is_full, src, off, len) \
+    _core_write_c2h(buf, is_open, is_full, (src), (off) * sizeof(*src), (len) * sizeof(*src));
 
-bool _core_write_c2h(core_chan_t chan, void *src, size_t off, size_t len);
+bool _core_write_c2h(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full,
+                     void *src, size_t off, size_t len);
 
 // host-to-core channel read
 
-#define core_read_h2c(chan, src, off, len) \
-    _core_read_h2c((chan), (src), (off) * sizeof(*src), (len) * sizeof(*src));
+#define core_read_h2c(buf, is_open, is_full, src, off, len) \
+    _core_read_h2c(buf, is_open, is_full, (src), (off) * sizeof(*src), (len) * sizeof(*src));
 
-bool _core_read_h2c(core_chan_t chan, void *dst, size_t off, size_t len);
+bool _core_read_h2c(volatile void *const buf,
+                    volatile bool *const is_open,
+                    volatile bool *const is_full,
+                    void *dst, size_t off, size_t len);
 
 // core-to-core channel write
 
-#define core_write_c2c(chan, src, off, len) \
-    _core_write_c2c((chan), (src), (off) * sizeof(*src), (len) * sizeof(*src));
+#define core_write_c2c(buf, is_open, is_full, src, off, len) \
+    _core_write_c2c(buf, is_open, is_full, (src), (off) * sizeof(*src), (len) * sizeof(*src));
 
-bool _core_write_c2c(core_chan_t chan, void *src, size_t off, size_t len);
+bool _core_write_c2c(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full,
+                     void *src, size_t off, size_t len);
 
 // core-to-core channel read
 
-#define core_read_c2c(chan, src, off, len) \
-    _core_read_c2c((chan), (src), (off) * sizeof(*src), (len) * sizeof(*src));
+#define core_read_c2c(buf, is_open, is_full, src, off, len) \
+    _core_read_c2c(buf, is_open, is_full, (src), (off) * sizeof(*src), (len) * sizeof(*src));
 
-bool _core_read_c2c(core_chan_t chan, void *dst, size_t off, size_t len);
+bool _core_read_c2c(volatile void *const buf,
+                    volatile bool *const is_open,
+                    volatile bool *const is_full,
+                    void *dst, size_t off, size_t len);
 
 // close any kind of channel
 
-void core_close_chan(core_chan_t chan);
+void core_close_chan(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full);
 
 #endif /* __epiphany__ */
 

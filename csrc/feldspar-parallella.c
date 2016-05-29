@@ -83,65 +83,70 @@ void host_close_chan(host_chan_t chan) {
 
 #include <stdint.h>
 
-void core_make_chan(core_chan_t *chan,
-                    volatile void *const buf,
+bool _core_write_c2h(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full,
+                     void *src, size_t off, size_t len) {
+  do {
+    if (!*is_open) {
+      // do not wait for a closed channel to get empty
+      return false;
+    }
+  } while (*is_full);
+  core_write_shared(buf, src, 0, off, off + len - 1);
+  *is_full = true;
+  return true;
+}
+
+bool _core_read_h2c(volatile void *const buf,
                     volatile bool *const is_open,
-                    volatile bool *const is_full) {
-  chan->buf = buf;
-  chan->is_open = is_open;
-  chan->is_full = is_full;
-}
-
-bool _core_write_c2h(volatile core_chan_t chan, void *src, size_t off, size_t len) {
+                    volatile bool *const is_full,
+                    void *dst, size_t off, size_t len) {
   do {
-    if (!*chan.is_open) {
-      // do not wait for a closed channel to get empty
-      return false;
-    }
-  } while (*chan.is_full);
-  core_write_shared(chan.buf, src, 0, off, off + len - 1);
-  *chan.is_full = true;
-  return true;
-}
-
-bool _core_read_h2c(volatile core_chan_t chan, void *dst, size_t off, size_t len) {
-  do {
-    if (!*chan.is_open) {
+    if (!*is_open) {
       // do not wait for a closed channel to be filled
       return false;
     }
-  } while (!*chan.is_full);
-  core_read_shared(chan.buf, dst, 0, off, off + len - 1);
-  *chan.is_full = false;
+  } while (!*is_full);
+  core_read_shared(buf, dst, 0, off, off + len - 1);
+  *is_full = false;
   return true;
 }
 
-bool _core_write_c2c(core_chan_t chan, void *src, size_t off, size_t len) {
+bool _core_write_c2c(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full,
+                     void *src, size_t off, size_t len) {
   do {
-    if (!(*chan.is_open)) {
+    if (!(*is_open)) {
       // do not wait for a closed channel to get empty
       return false;
     }
-  } while (*chan.is_full);
-  core_write_local(chan.buf, src, 0, off, off + len - 1);
-  *chan.is_full = true;
+  } while (*is_full);
+  core_write_local(buf, src, 0, off, off + len - 1);
+  *is_full = true;
   return true;
 }
 
-bool _core_read_c2c(core_chan_t chan, void *dst, size_t off, size_t len) {
+bool _core_read_c2c(volatile void *const buf,
+                    volatile bool *const is_open,
+                    volatile bool *const is_full,
+                    void *dst, size_t off, size_t len) {
   do {
-    if (!*chan.is_open) {
+    if (!*is_open) {
       // do not wait for a closed channel to be filled
       return false;
     }
-  } while (!*chan.is_full);
-  core_read_local(chan.buf, dst, 0, off, off + len - 1);
-  *chan.is_full = false;
+  } while (!*is_full);
+  core_read_local(buf, dst, 0, off, off + len - 1);
+  *is_full = false;
   return true;
 }
 
-void core_close_chan(core_chan_t chan) {
-  *chan.is_open = false;
+void core_close_chan(volatile void *const buf,
+                     volatile bool *const is_open,
+                     volatile bool *const is_full) {
+  *is_open = false;
 }
 
 // based on the epiphany-bsp library

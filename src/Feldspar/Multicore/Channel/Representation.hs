@@ -27,9 +27,12 @@ data CoreChan (a :: *)
   = CoreChanRun (Imp.Chan Imp.Closeable a)
   | CoreChanComp ChanCompRep
 
+type ChanRef = FunArg Data PrimType'
+type ChanArgs = [FunArg Data PrimType']
+
 data ChanCompRep
-  = HostChanRep (FunArg Data PrimType')
-  | CoreChanRep (FunArg Data PrimType') (FunArg Data PrimType') (FunArg Data PrimType')
+  = HostChanRep ChanRef ChanArgs
+  | CoreChanRep ChanArgs
 
 
 data CoreChanAllocCMD fs a where
