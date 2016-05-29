@@ -129,11 +129,12 @@ compCoreChanCMD (WriteChan (CoreChanComp (HostChanRep _ chanArgs)) off sz arr) =
 compCoreChanCMD (WriteChan (CoreChanComp (CoreChanRep chanArgs)) off sz arr) = lift $ do
     addInclude "<feldspar-parallella.h>"
     callFun "core_write_c2c" $ chanArgs ++ [ arrArg arr, valArg off, valArg sz ]
+compCoreChanCMD (CloseChan (CoreChanComp (HostChanRep _ chanArgs))) = lift $ do
+        addInclude "<feldspar-parallella.h>"
+        callProc "core_close_chan" chanArgs
 compCoreChanCMD (CloseChan (CoreChanComp (CoreChanRep chanArgs))) = lift $ do
         addInclude "<feldspar-parallella.h>"
-        callProc "host_close_chan" chanArgs
-compCoreChanCMD (CloseChan _) =
-    error "closeChan: unable to close host channel in core"
+        callProc "core_close_chan" chanArgs
 
 instance Interp CoreChanCMD CoreGen (Param2 Data PrimType')
   where interp = compCoreChanCMD
