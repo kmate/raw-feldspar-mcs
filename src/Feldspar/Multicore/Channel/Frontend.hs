@@ -34,7 +34,7 @@ data CoreChan a
 class PrimType (ElemType a) => CoreChanType a
   where
     type ElemType a :: *
-    data SizeSpec a :: *
+    type SizeSpec a :: *
     newChan :: CoreId -> CoreId -> SizeSpec a -> Multicore (CoreChan a)
 
 class CoreChanType a => CoreTransferable' m a
@@ -56,18 +56,8 @@ class    (CoreTransferable' Host a, CoreTransferable' CoreComp a) => CoreTransfe
 instance (CoreTransferable' Host a, CoreTransferable' CoreComp a) => CoreTransferable a
 
 
-one :: PrimType a => SizeSpec (Data a)
-one = SingleItem
-
-
-instance Num (SizeSpec (Store (DPull a)))
-  where
-    fromInteger n = VecChanSizeSpec $ fromIntegral n
-    (VecChanSizeSpec n) + (VecChanSizeSpec m) = VecChanSizeSpec $ n + m
-    (VecChanSizeSpec n) - (VecChanSizeSpec m) = VecChanSizeSpec $ n - m
-    (VecChanSizeSpec n) * (VecChanSizeSpec m) = VecChanSizeSpec $ n * m
-    abs (VecChanSizeSpec n) = VecChanSizeSpec $ abs n
-    signum (VecChanSizeSpec n) = VecChanSizeSpec $ signum n
+one :: SizeSpec (Data a)
+one = ()
 
 
 --------------------------------------------------------------------------------
@@ -77,7 +67,7 @@ instance Num (SizeSpec (Store (DPull a)))
 instance PrimType a => CoreChanType (Data a)
   where
     type ElemType (Data a) = a
-    data SizeSpec (Data a) = SingleItem
+    type SizeSpec (Data a) = ()
     newChan f t sz
       = Multicore $ fmap (CoreChan sz) $ singleInj
       $ Rep.NewChan f t 1
@@ -111,15 +101,15 @@ instance (Monad m, PrimType a) => CoreTransferType m (Data a) (Data a)
 instance PrimType a => CoreChanType (Store (DPull a))
   where
     type ElemType (Store (DPull a)) = a
-    data SizeSpec (Store (DPull a)) = VecChanSizeSpec Length
-    newChan f t sz@(VecChanSizeSpec l)
+    type SizeSpec (Store (DPull a)) = Length
+    newChan f t sz
       = Multicore $ fmap (CoreChan sz) $ singleInj
-      $ Rep.NewChan f t l
+      $ Rep.NewChan f t sz
 
 instance PrimType a => CoreTransferable' Host (Store (DPull a))
   where
     type Slot (Store (DPull a)) = Store (DPull a)
-    newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
+    newSlot (CoreChan l _) = newStore $ value l
     getSlot = return
 
     readChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
@@ -133,7 +123,7 @@ instance PrimType a => CoreTransferable' Host (Store (DPull a))
 instance PrimType a => CoreTransferable' CoreComp (Store (DPull a))
   where
     type Slot (Store (DPull a)) = Store (DPull a)
-    newSlot (CoreChan (VecChanSizeSpec l) _) = newStore $ value l
+    newSlot (CoreChan l _) = newStore $ value l
     getSlot = return
 
     readChan (CoreChan _ c) s@(Store (lenRef, arr)) = do
