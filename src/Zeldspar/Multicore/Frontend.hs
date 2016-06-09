@@ -43,7 +43,7 @@ infixl 1 >>|
         => MulticoreZ inp (Data mid) a
         -> MulticoreZ (Data mid) out b
         -> MulticoreZ inp out ()
-(|>>>|) = Connect one
+a |>>>| b = a |>>one>>| b
 
 infixl 1 |>>>|
 

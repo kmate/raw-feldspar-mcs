@@ -7,37 +7,37 @@ import Zeldspar.Multicore
 
 vecInc :: (PrimType a, Num a) => CoreZ (Store (DPull a)) (Store (DPull a)) ()
 vecInc = loop $ do
-    s <- receive
+    s <- take
     v <- lift $ unsafeFreezeStore s
     lift $ writeStore s (fmap (+1) v)
     emit s
 
 vecInc' :: (PrimType a, Num a) => CoreZ (DPull a) (Store (DPull a)) ()
 vecInc' = loop $ do
-    v <- receive
+    v <- take
     s <- lift $ initStore (fmap (+1) v)
     emit s
 
 vecInc'' :: (PrimType a, Num a) => CoreZ (Store (DPull a)) (DPull a) ()
 vecInc'' = loop $ do
-    s <- receive
+    s <- take
     v <- lift $ unsafeFreezeStore s
     emit (fmap (+1) v)
 
 
 vecTwice :: (PrimType a, Num a) => CoreZ (DPull a) (DPull a) ()
 vecTwice = loop $ do
-    v <- receive
+    v <- take
     emit $ fmap (*2) v
 
 vecRev :: PrimType a => CoreZ (DPull a) (DPull a) ()
 vecRev = loop $ do
-    v <- receive
+    v <- take
     emit (reverse v)
 
 
 vector :: Multicore ()
-vector = runZ
+vector = runParZ
     ((vecInc `on` 0) |>>chanSize>>|
      (vecInc' `on` 1) |>>chanSize>>|
      (vecInc'' `on` 2) |>>chanSize>>|

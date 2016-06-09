@@ -24,7 +24,7 @@ flipFlop (a, b) fs = do
           writeStore dst output
           return output
   loop $ do
-    input <- receive
+    input <- take
     lift $ writeStore a input
     output <- lift $ C.foldM go input fs'
     emit output
@@ -117,7 +117,7 @@ testFFT inputFile = do
             setArr i (complex re im) input
         inp :: ComplexSamples <- unsafeFreezeVec (value n) input
         return (h, inp)
-    runZ
+    runParZ
         (fft n `on` 0)
         (return (inp, true))
         chanSize

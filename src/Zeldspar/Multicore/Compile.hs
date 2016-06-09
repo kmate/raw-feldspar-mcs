@@ -8,26 +8,26 @@ import Feldspar.Run.Concurrent (waitThread)
 import Feldspar.Multicore
 import Feldspar.Multicore.Representation hiding (OnCore)
 
-import Zeldspar (translate)
+import Zeldspar (runZ)
 import Zeldspar.Multicore.Representation
 
 
-runZ :: forall inp inp' out out' a
-     .  ( CoreTransferable inp, CoreTransferType Host inp' inp
-        , CoreTransferable out, CoreTransferType Host out' out )
-     => MulticoreZ inp out a
-     -> (Host (inp', Data Bool))    -- ^ Source
-     -> SizeSpec inp                -- ^ Source channel size
-     -> (out' -> Host (Data Bool))  -- ^ Sink
-     -> SizeSpec out                -- ^ Sink channel size
-     -> Multicore ()
-runZ ps inp ichs out ochs = do
+runParZ :: forall inp inp' out out' a
+        .  ( CoreTransferable inp, CoreTransferType Host inp' inp
+           , CoreTransferable out, CoreTransferType Host out' out )
+        => MulticoreZ inp out a
+        -> (Host (inp', Data Bool))    -- ^ Source
+        -> SizeSpec inp                -- ^ Source channel size
+        -> (out' -> Host (Data Bool))  -- ^ Sink
+        -> SizeSpec out                -- ^ Sink channel size
+        -> Multicore ()
+runParZ ps inp ichs out ochs = do
     let next = nextCoreIds ps
     i <- newChan hostId 0 ichs
     o <- foldParZ ochs i next ps $ \ chs i c n p -> do
         o <- newChan c n chs
         onHost $ onCoreWithRef c $ \r ->
-            translate (void p) (coreRead r i o) (coreWrite r i o)
+            runZ (void p) (coreRead r i o) (coreWrite r i o)
         return o
     onHost $ do
         -- Read from output channel, shove output into sink

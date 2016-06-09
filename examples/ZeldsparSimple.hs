@@ -7,7 +7,7 @@ import Zeldspar.Multicore
 
 simple :: Multicore ()
 simple = do
-    runZ
+    runParZ
         (inc `on` 0 |>>>| twice `on` 1)
         readInput
         one
@@ -27,7 +27,7 @@ twice = zmap (*2)
 
 zmap :: (inp -> out) -> CoreZ inp out ()
 zmap f = loop $ do
-    x <- receive
+    x <- take
     emit (f x)
 
 
