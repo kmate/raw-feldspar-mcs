@@ -49,7 +49,7 @@ instance HFunctor CoreChanAllocCMD where
 instance HBifunctor CoreChanAllocCMD where
   hbimap _ _ (NewChan f t sz) = NewChan f t sz
 
-instance (CoreChanAllocCMD :<: instr) => Reexpressible CoreChanAllocCMD instr where
+instance (CoreChanAllocCMD :<: instr) => Reexpressible CoreChanAllocCMD instr env where
   reexpressInstrEnv reexp (NewChan f t sz) = lift $ singleInj $ NewChan f t sz
 
 
@@ -91,9 +91,9 @@ instance HFunctor CoreChanCMD where
 runCoreChanCMD :: CoreChanCMD (Param3 Run Data PrimType') a -> Run a
 runCoreChanCMD (WriteOne (CoreChanRun c) v) =
     Run $ (fmap Imp.valToExp) $ singleInj $ Imp.WriteOne c v
-runCoreChanCMD (ReadChan (CoreChanRun c) off sz (Arr _ (Single arr))) =
+runCoreChanCMD (ReadChan (CoreChanRun c) off sz (Arr _ _ (Single arr))) =
     Run $ (fmap Imp.valToExp) $ singleInj $ Imp.ReadChan c off sz arr
-runCoreChanCMD (WriteChan (CoreChanRun c) off sz (Arr _ (Single arr))) =
+runCoreChanCMD (WriteChan (CoreChanRun c) off sz (Arr _ _ (Single arr))) =
     Run $ (fmap Imp.valToExp) $ singleInj $ Imp.WriteChan c off sz arr
 runCoreChanCMD (CloseChan (CoreChanRun c)) = Run $ Imp.closeChan c
 

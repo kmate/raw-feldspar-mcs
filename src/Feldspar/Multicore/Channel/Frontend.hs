@@ -158,14 +158,12 @@ instance (MonadComp m, PrimType a) => CoreTransferType m (DPush a) (Store (DPull
               v <- getArr i arr
               write i v
 
-instance (MonadComp m, PrimType a) => CoreTransferType m (Dim1 (Arr a)) (Store (DPull a))
+instance (MonadComp m, PrimType a) => CoreTransferType m (Arr a) (Store (DPull a))
   where
     toTransfer x = do
-        lenRef <- initRef $ dimLength x
-        return $ Store (lenRef, dim1_inner x)
-    fromTransfer (Store (lenRef, arr)) = do
-        len <- getRef lenRef
-        return $ Dim1 len arr
+        lenRef <- initRef $ Feldspar.length x
+        return $ Store (lenRef, x)
+    fromTransfer (Store (_, arr)) = return arr
 
 
 --------------------------------------------------------------------------------

@@ -215,7 +215,7 @@ allocLocal cty coreId size = do
     modify (name `hasType` ty)
     modify (coreId `includes` incl)
     lift $ addDefinition [cedecl| typename off_t $id:name = $addr; |]
-    return (mkArrayRef name, byteSize)
+    return (mkArrayRef name size, byteSize)
 
 instance Interp AllocCMD RunGen (Param2 Prim PrimType)
   where interp = compAllocCMD
@@ -383,7 +383,7 @@ compCore coreId comp = do
     -- compile the core program to C and collect the resulting environment
     let (_, env) = cGen $ do
             addCoreSpecification coreId
-            C.wrapMain $ interpret $ alignArrays $ translate comp
+            C.wrapMain $ interpret $ alignArrays $ translate env0 comp
 
     -- collect pre-allocated local and shared arrays used by core main
     arrayDecls <- mkArrayDecls coreId (mainUsedVars env)
@@ -506,11 +506,11 @@ compCoreSharedCopy op spm ram offset (lower, upper) = do
 cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
-mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> arr a
-mkArrayRef = wrapArr . Arr 0 . Single . Imp.ArrComp
+mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> Length -> arr a
+mkArrayRef n l = wrapArr $ Arr 0 (value l) $ Single $ Imp.ArrComp n
 
 arrayRefName :: ArrayWrapper arr => arr a -> VarId
-arrayRefName (unwrapArr -> (Arr _ (Single (Imp.ArrComp name)))) = name
+arrayRefName (unwrapArr -> (Arr _ _ (Single (Imp.ArrComp name)))) = name
 
 
 --------------------------------------------------------------------------------
