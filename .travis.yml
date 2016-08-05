@@ -32,6 +32,7 @@ install:
   - git clone https://github.com/emilaxelsson/imperative-edsl
   #- git clone https://github.com/markus-git/hardware-edsl
   - git clone https://github.com/emilaxelsson/raw-feldspar
+  - git clone https://github.com/kmate/zeldspar
   - echo "packages:"         >  cabal.project &&
     echo "  ./"              >> cabal.project &&
     echo "  imperative-edsl" >> cabal.project &&
@@ -54,7 +55,8 @@ script:
   - echo "packages:"               >  dist/$SRC_BASENAME/cabal.project &&
     echo "  *.cabal"               >> dist/$SRC_BASENAME/cabal.project &&
     echo "  ../../imperative-edsl" >> dist/$SRC_BASENAME/cabal.project &&
-    echo "  ../../raw-feldspar"    >> dist/$SRC_BASENAME/cabal.project
+    echo "  ../../raw-feldspar"    >> dist/$SRC_BASENAME/cabal.project &&
+    echo "  ../../zeldspar"        >> dist/$SRC_BASENAME/cabal.project
   - cd dist/$SRC_BASENAME/
   - cabal new-build --enable-tests --enable-benchmarks --constraint="language-c-quote -full-haskell-antiquotes" --disable-optimization
 
