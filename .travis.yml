@@ -31,7 +31,7 @@ install:
   - travis_retry cabal update -v
   - git clone https://github.com/emilaxelsson/imperative-edsl
   #- git clone https://github.com/markus-git/hardware-edsl
-  - git clone git@github.com:emilaxelsson/raw-feldspar
+  - git clone https://github.com/emilaxelsson/raw-feldspar
   - echo "packages:"         >  cabal.project &&
     echo "  ./"              >> cabal.project &&
     echo "  imperative-edsl" >> cabal.project &&
