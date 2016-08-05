@@ -115,7 +115,7 @@ testFFT inputFile = do
             re :: Data Double <- liftHost $ fget h
             im :: Data Double <- liftHost $ fget h
             setArr i (complex re im) input
-        inp :: ComplexSamples <- unsafeFreezeVec (value n) input
+        inp :: ComplexSamples <- unsafeFreezeVec input
         return (h, inp)
     runParZ
         (fft n `on` 0)
@@ -145,10 +145,16 @@ testAll = do
         let name' = if name P.== "main" then "host" else name
         writeFile (name' P.++ ".c") contents
 
-runTestCompiled = runCompiled' opts test
+runTestCompiled = runCompiled' def opts test
   where
-    opts = defaultExtCompilerOpts
+    opts = def
         { externalFlagsPre  = [ "-I../imperative-edsl/include"
                               , "../imperative-edsl/csrc/chan.c"]
         , externalFlagsPost = [ "-lpthread" ]
         }
+
+unsafeFreezeVec :: (PrimType a, MonadComp m) => Arr a -> m (DPull a)
+unsafeFreezeVec arr = do
+  iarr <- unsafeFreezeArr arr
+  return $ toPull $ Manifest iarr
+

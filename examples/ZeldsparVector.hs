@@ -55,7 +55,7 @@ vector = runParZ
         for (0, 1, Excl $ value vecSize) $ \i -> do
             v <- fget stdin
             setArr i v input
-        vec <- unsafeFreezeVec (value $ vecSize) input
+        vec <- unsafeFreezeVec input
         return (vec, true)
     writeOutput :: DPull Int32 -> Host (Data Bool)
     writeOutput o = do
@@ -74,10 +74,16 @@ testAll = do
         let name' = if name Prelude.== "main" then "host" else name
         writeFile (name' Prelude.++ ".c") contents
 
-runTestCompiled = runCompiled' opts test
+runTestCompiled = runCompiled' def opts test
   where
-    opts = defaultExtCompilerOpts
+    opts = def
         { externalFlagsPre  = [ "-I../imperative-edsl/include"
                               , "../imperative-edsl/csrc/chan.c"]
         , externalFlagsPost = [ "-lpthread" ]
         }
+
+unsafeFreezeVec :: (PrimType a, MonadComp m) => Arr a -> m (DPull a)
+unsafeFreezeVec arr = do
+  iarr <- unsafeFreezeArr arr
+  return $ toPull $ Manifest iarr
+

@@ -77,6 +77,6 @@ testAll = do
         let name' = if name Prelude.== "main" then "host" else name
         writeFile (name' Prelude.++ ".c") contents
 
-runTestCompiled = runCompiled' opts test
+runTestCompiled = runCompiled' def opts test
   where
-    opts = defaultExtCompilerOpts {externalFlagsPost = ["-lpthread"]}
+    opts = def {externalFlagsPost = ["-lpthread"]}
