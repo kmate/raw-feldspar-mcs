@@ -8,6 +8,7 @@ import Data.Proxy
 import Data.Typeable
 
 import Feldspar hiding ((==))
+import Feldspar.Data.Storable
 import Feldspar.Data.Vector hiding (ofLength, VecChanSizeSpec)
 import Feldspar.Multicore.CoreId
 import qualified Feldspar.Multicore.Channel.Representation as Rep
@@ -144,7 +145,7 @@ instance (MonadComp m, PrimType a) => CoreTransferType m (DPull a) (Store (DPull
     toTransfer   = initStore
     fromTransfer = unsafeFreezeStore
 
-instance (MonadComp m, PrimType a) => CoreTransferType m (DPush a) (Store (DPull a))
+instance (MonadComp m, PrimType a) => CoreTransferType m (DPush m a) (Store (DPull a))
   where
     toTransfer (Push len dump) = do
         s@(Store (_, arr)) <- newStore len

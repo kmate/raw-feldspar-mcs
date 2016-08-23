@@ -1,9 +1,9 @@
 module Zeldspar.Multicore.Representation where
 
+import Feldspar.Data.Storable
 import Feldspar.Multicore.CoreId
 import Feldspar.Multicore.Channel.Frontend
 import Feldspar.Multicore.Representation
-import Feldspar.Storable
 
 import Ziria
 
