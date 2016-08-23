@@ -45,7 +45,7 @@ rotBit k i = lefts .|. rights
 
 -- | Permute the vector by applying 'rotBit k' on its indices.
 riffle :: Index -> DPull a -> DPull a
-riffle k = permute (const $ rotBit k)
+riffle k = backPermute (const $ rotBit k)
 
 -- | Generates parallel bit reversal of a vector with length 'n'.
 bitRev :: PrimType a => Length -> [ DPull a -> DPull a ]

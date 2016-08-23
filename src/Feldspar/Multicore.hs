@@ -5,6 +5,7 @@ module Feldspar.Multicore
 import Control.Monad.Trans (lift)
 
 import Feldspar as F hiding (forever)
+import Feldspar.Data.Storable as F hiding (forever)
 import Feldspar.Run as F hiding (forever)
 
 import Feldspar.Multicore.CoreId as F
