@@ -1,4 +1,4 @@
-# Multi-Core & Scratchpad Support for Resource-Aware Feldspar
+# Multi-Core & Scratchpad Support for Resource-Aware Feldspar [![Build Status](https://travis-ci.org/kmate/raw-feldspar-mcs.svg?branch=master)](https://travis-ci.org/kmate/raw-feldspar-mcs)
 
 ## Installation
 
