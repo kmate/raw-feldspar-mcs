@@ -5,7 +5,7 @@
 Here is a suggested incantation:
 
     git clone git@github.com:emilaxelsson/imperative-edsl
-    git clone git@github.com:emilaxelsson/raw-feldspar
+    git clone git@github.com:Feldspar/raw-feldspar
     git clone git@github.com:kmate/zeldspar
     git clone git@github.com:kmate/raw-feldspar-mcs
     cd raw-feldspar-mcs
