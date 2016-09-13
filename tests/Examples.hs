@@ -1,5 +1,4 @@
 import qualified Channel
-import qualified Flags
 import qualified Simple
 import qualified Shared
 import qualified ZeldsparFFT
