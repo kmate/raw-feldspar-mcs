@@ -14,3 +14,4 @@ import Feldspar.Multicore.Compile.Parallella as F
 import Feldspar.Multicore.Frontend as F
 import Feldspar.Multicore.Reference as F
 import Feldspar.Multicore.Representation as F (IndexRange, LArr, DLArr, SArr, DSArr, CoreComp, Multicore, Host)
+import Feldspar.Multicore.Semaphore as F

@@ -9,6 +9,10 @@ import Feldspar.Multicore.Representation
 import Language.Embedded.Concurrent as Imp
 
 
+forever :: MonadComp m => m () -> m ()
+forever = while (return true)
+
+
 --------------------------------------------------------------------------------
 -- Bulk array frontend
 --------------------------------------------------------------------------------
@@ -63,11 +67,6 @@ setLArr :: forall a. Syntax a => LArr a -> Data Index -> a -> CoreComp ()
 setLArr arr i a = do
   larr <- local arr
   setArr larr i a
-
-
-forever :: CoreComp () -> CoreComp ()
-forever = while (return $ true)
-
 
 instance Halt CoreComp
   where

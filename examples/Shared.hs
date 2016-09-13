@@ -4,66 +4,68 @@ import qualified Prelude
 
 import Feldspar.Multicore
 
+n' :: Word32
+n' = 4
 
-n :: Word32
-n = 4
+n :: Data Word32
+n = value n'
 
 shared :: Multicore ()
 shared = do
-    f0 <- allocRef 0
-    b0 <- allocSArr n
-    f1 <- allocRef 1
-    b1 <- allocLArr 1 n
-    f2 <- allocRef 2
-    b2 <- allocSArr n
+    s0 <- allocSem 0
+    b0 <- allocSArr n'
+    s1 <- allocSem 1
+    b1 <- allocLArr 1 n'
+    s2 <- allocSem 2
+    b2 <- allocSArr n'
     onHost $ do
-        setLocalRef f0 false
-        setLocalRef f1 false
-        setLocalRef f2 false
-        onCore 0 (f (f0, b0) (f1, b1))
-        onCore 1 (g (f1, b1) (f2, b2))
+        initSem s0
+        initSem s1
+        initSem s2
+        onCore 0 (f (s0, b0) (s1, b1))
+        onCore 1 (g (s1, b1) (s2, b2))
 
-        while (return $ true) $ do
-            input :: Arr Int32 <- newArr $ value n
-            for (0, 1, Excl $ value n) $ \i -> do
+        forever $ do
+            input <- newArr n
+            for (0, 1, Excl n) $ \i -> do
                 item <- lift $ fget stdin
-                setArr i item input
+                setArr input i item
 
-            writeArr b0 (0, value $ n - 1) input
-            setLocalRef f0 true
-            output <- newArr $ value n
-            while (not <$> getLocalRef f2) $ return ()
-            setLocalRef f2 false
-            readArr b2 (0, value $ n - 1) output
+            writeArr b0 (0, n - 1) input
+            release s0
 
-            for (0, 1, Excl $ value n) $ \i -> do
-                item :: Data Int32 <- getArr i output
+            output <- newArr n
+            acquire s2
+            readArr b2 (0, n - 1) output
+
+            for (0, 1, Excl n) $ \i -> do
+                item <- getArr output i
                 printf "> %d\n" item
 
 
-f :: (LocalRef Bool, SharedArr Int32) -> (LocalRef Bool, LocalArr Int32) -> CoreComp ()
+f :: (Sem, DSArr Int32) -> (Sem, DLArr Int32) -> CoreComp ()
 f (ri, input) (ro, output) = forever $ do
-    while (not <$> getLocalRef ri) $ return ()
-    setLocalRef ri false
+    acquire ri
 
-    tmp <- newArr 10
-    readArr input (0,9) tmp
-    for (0, 1, Excl $ value n) $ \i -> do
-        item :: Data Int32 <- getArr i tmp
-        setArr i (item + 1) -< output
-    setLocalRef ro true
+    tmp <- newArr n
+    readArr input (0, n - 1) tmp
+    for (0, 1, Excl n) $ \i -> do
+        item <- getArr tmp i
+        setLArr output i (item + 1)
 
-g :: (LocalRef Bool, LocalArr Int32) -> (LocalRef Bool, SharedArr Int32) -> CoreComp ()
+    release ro
+
+g :: (Sem, DLArr Int32) -> (Sem, DSArr Int32) -> CoreComp ()
 g (ri, input) (ro, output) = forever $ do
-    while (not <$> getLocalRef ri) $ return ()
-    setLocalRef ri false
+    acquire ri
 
-    tmp <- newArr 10
-    for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i -< input
-        setArr i (item * 2) tmp
-    writeArr output (0,9) tmp
-    setLocalRef ro true
+    tmp <- newArr n
+    for (0, 1, Excl n) $ \i -> do
+        item <- getLArr input i
+        setArr tmp i (item * 2)
+    writeArr output (0, n - 1) tmp
+
+    release ro
 
 
 ------------------------------------------------------------

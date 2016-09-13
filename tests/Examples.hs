@@ -8,7 +8,6 @@ import qualified ZeldsparVector
 
 main = do
     Channel.testAll
-    Flags.testAll
     Simple.testAll
     Shared.testAll
     ZeldsparFFT.testAll
