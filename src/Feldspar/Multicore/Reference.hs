@@ -6,33 +6,34 @@ import Feldspar.Multicore.Frontend
 import Feldspar.Multicore.Representation
 
 
-newtype LocalRef a = LocalRef { unLocalRef :: LocalArr a }
+newtype LRef a = LRef { unLocalRef :: LArr a }
+
+type DLRef a = LRef (Data a)
+
+allocRef :: PrimType a => CoreId -> Multicore (DLRef a)
+allocRef coreId = LRef <$> allocLArr coreId 1
 
 
-allocRef :: PrimType a => CoreId -> Multicore (LocalRef a)
-allocRef coreId = LocalRef <$> allocLArr coreId 1
-
-
-class (MonadComp m, ArrayAccess LocalArr m) => LocalRefAccess m
+class (MonadComp m, ArrayAccess LArr m) => LocalRefAccess m
   where
-    getLocalRef :: PrimType a => LocalRef a -> m (Data a)
-    setLocalRef :: PrimType a => LocalRef a -> Data a -> m ()
+    getLocalRef :: PrimType a => DLRef a -> m (Data a)
+    setLocalRef :: PrimType a => DLRef a -> Data a -> m ()
 
 
 instance LocalRefAccess Host
   where
-    getLocalRef (LocalRef arr) = do
+    getLocalRef (LRef arr) = do
         tmp <- newArr 1
         readArr arr (0,0) tmp
-        getArr 0 tmp
+        getArr tmp 0
 
-    setLocalRef (LocalRef arr) value = do
+    setLocalRef (LRef arr) value = do
         tmp <- newArr 1
-        setArr 0 value tmp
+        setArr tmp 0 value
         writeArr arr (0,0) tmp
 
 
 instance LocalRefAccess CoreComp
   where
-    getLocalRef (LocalRef arr) = getArr 0 -< arr
-    setLocalRef (LocalRef arr) value = setArr 0 value -< arr
+    getLocalRef (LRef arr) = getLArr arr 0
+    setLocalRef (LRef arr) value = setLArr arr 0 value

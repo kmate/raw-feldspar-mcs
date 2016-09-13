@@ -43,9 +43,9 @@ compNewCoreChan cmd@(NewChan f t sz)
             bty = cType (Proxy :: Proxy Bool)
             arg = proxyArg cmd
             cty = compType (proxyPred cmd) arg
-        (isOpen :: LocalArr Bool, _) <- allocLocal bty t 1
-        (isFull :: LocalArr Bool, _) <- allocLocal bty t 1
-        (buf :: LocalArr a, _) <- allocLocal cty t sz
+        (isOpen :: DLArr Bool, _) <- allocLocal bty t 1
+        (isFull :: DLArr Bool, _) <- allocLocal bty t 1
+        (buf :: LArr (Data a), _) <- allocLocal cty t sz
         groupAddr <- gets group
         lift $ do
             addInclude "<feldspar-parallella.h>"
@@ -64,9 +64,9 @@ compNewCoreChan cmd@(NewChan f t sz)
             bty = cType (Proxy :: Proxy Bool)
             arg = proxyArg cmd
             cty = compType (proxyPred cmd) arg
-        (isOpen :: LocalArr Bool, _) <- allocLocal bty cid 1
-        (isFull :: LocalArr Bool, _) <- allocLocal bty cid 1
-        (buf :: SharedArr a, shmRef) <- allocShared cty sz
+        (isOpen :: DLArr Bool, _) <- allocLocal bty cid 1
+        (isFull :: DLArr Bool, _) <- allocLocal bty cid 1
+        (buf :: SArr (Data a), shmRef) <- allocShared cty sz
         groupAddr <- gets group
         hostChan <- lift $ do
             addInclude "<feldspar-parallella.h>"
@@ -187,17 +187,17 @@ wrapESDK program = do
 compAllocCMD :: (CompExp Prim, CompTypeClass PrimType)
              => AllocCMD (Param3 RunGen Prim PrimType) a -> RunGen a
 compAllocCMD cmd@(AllocSArr size) = do
-    let cty = compType (proxyPred cmd) (proxyArg cmd)
+    let cty = compType (proxyPred cmd) (proxyArg (proxyArg cmd))
     fst <$> allocShared cty size
 compAllocCMD cmd@(AllocLArr coreId size) = do
-    let cty = compType (proxyPred cmd) (proxyArg cmd)
+    let cty = compType (proxyPred cmd) (proxyArg (proxyArg cmd))
     fst <$> allocLocal cty coreId size
 compAllocCMD (OnHost host) = do
     s <- get
     lift $ evalGen s $ interpretT (lift :: Run a -> RunGen a) $ unHost host
 
 allocShared :: (ArrayWrapper arr, PrimType a)
-             => C.CGen C.Type -> Length -> RunGen (arr a, FunArg Data PrimType')
+             => C.CGen C.Type -> Length -> RunGen (arr (Data a), FunArg Data PrimType')
 allocShared cty size = do
     (arr, size) <- allocLocal cty sharedId size
     shmRef <- addr . objArg <$> (lift $ newNamedObject "shm" "e_mem_t" False)
@@ -206,7 +206,7 @@ allocShared cty size = do
     return (arr, shmRef)
 
 allocLocal :: (ArrayWrapper arr, PrimType a)
-          => C.CGen C.Type -> CoreId -> Length -> RunGen (arr a, Length)
+          => C.CGen C.Type -> CoreId -> Length -> RunGen (arr (Data a), Length)
 allocLocal cty coreId size = do
     let (ty, env) = cGen cty
         incl = C._includes env
@@ -273,17 +273,17 @@ instance Interp CoreHaltCMD RunGen (Param2 exp pred)
   where interp = compHostHaltCMD
 
 
-compLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 RunGen exp pred) a -> RunGen a
+compLocalBulkArrCMD :: (BulkArrCMD LArr) (Param3 RunGen exp pred) a -> RunGen a
 compLocalBulkArrCMD (WriteArr offset spm range ram) =
     compLocalCopy "host_write_local"  spm ram offset range
 compLocalBulkArrCMD (ReadArr  offset spm range ram) =
     compLocalCopy "host_read_local"   spm ram offset range
 
-instance Interp (BulkArrCMD LocalArr) RunGen (Param2 exp pred)
+instance Interp (BulkArrCMD LArr) RunGen (Param2 exp pred)
   where interp = compLocalBulkArrCMD
 
 compLocalCopy :: PrimType a => String
-              -> LocalArr a-> Arr a
+              -> DLArr a -> Arr (Data a)
               -> Data Index -> IndexRange -> RunGen ()
 compLocalCopy op spm ram offset (lower, upper) = do
     groupAddr <- gets group
@@ -301,17 +301,17 @@ compLocalCopy op spm ram offset (lower, upper) = do
         ]
 
 
-compSharedBulkArrCMD :: (BulkArrCMD SharedArr) (Param3 RunGen exp pred) a -> RunGen a
+compSharedBulkArrCMD :: (BulkArrCMD SArr) (Param3 RunGen exp pred) a -> RunGen a
 compSharedBulkArrCMD (WriteArr offset spm range ram) =
     compSharedCopy "host_write_shared" spm ram offset range
 compSharedBulkArrCMD (ReadArr  offset spm range ram) =
     compSharedCopy "host_read_shared"  spm ram offset range
 
-instance Interp (BulkArrCMD SharedArr) RunGen (Param2 exp pred)
+instance Interp (BulkArrCMD SArr) RunGen (Param2 exp pred)
   where interp = compSharedBulkArrCMD
 
 compSharedCopy :: PrimType a => String
-               -> SharedArr a-> Arr a
+               -> DSArr a -> Arr (Data a)
                -> Data Index -> IndexRange -> RunGen ()
 compSharedCopy op spm ram offset (lower, upper) = do
     shmRef <- gets $ shmRefForName $ arrayRefName spm
@@ -371,8 +371,8 @@ alignArrays = go . view
 
     align :: forall a. TargetCMD TargetPrams a -> TargetCMD TargetPrams a
     align x = case (prj x :: Maybe (Imp.ArrCMD TargetPrams a)) of
-        Just (Imp.NewArr base len) -> inj $ Imp.NewCArr base (al) len
-        Just (Imp.InitArr base as) -> inj $ Imp.InitCArr base al as
+        Just (Imp.NewArr   base len) -> inj $ Imp.NewCArr   base al len
+        Just (Imp.ConstArr base as)  -> inj $ Imp.ConstCArr base al as
         _ -> x
       where
         al :: forall i. Integral i => Maybe i
@@ -445,17 +445,17 @@ instance Interp CoreHaltCMD CoreGen (Param2 exp pred)
   where interp = compCoreHaltCMD
 
 
-compCoreLocalBulkArrCMD :: (BulkArrCMD LocalArr) (Param3 CoreGen exp pred) a -> CoreGen a
+compCoreLocalBulkArrCMD :: (BulkArrCMD LArr) (Param3 CoreGen exp pred) a -> CoreGen a
 compCoreLocalBulkArrCMD (WriteArr offset spm range ram) =
     compCoreLocalCopy "core_write_local"  spm ram offset range
 compCoreLocalBulkArrCMD (ReadArr  offset spm range ram) =
     compCoreLocalCopy "core_read_local"   spm ram offset range
 
-instance Interp (BulkArrCMD LocalArr) CoreGen (Param2 exp pred)
+instance Interp (BulkArrCMD LArr) CoreGen (Param2 exp pred)
   where interp = compCoreLocalBulkArrCMD
 
 compCoreLocalCopy :: PrimType a => String
-                  -> LocalArr a-> Arr a
+                  -> DLArr a -> Arr (Data a)
                   -> Data Index -> IndexRange -> CoreGen ()
 compCoreLocalCopy op spm ram offset (lower, upper) = do
     groupAddr <- asks group
@@ -473,17 +473,17 @@ compCoreLocalCopy op spm ram offset (lower, upper) = do
             ]
 
 
-compCoreSharedBulkArrCMD :: (BulkArrCMD SharedArr) (Param3 CoreGen exp pred) a -> CoreGen a
+compCoreSharedBulkArrCMD :: (BulkArrCMD SArr) (Param3 CoreGen exp pred) a -> CoreGen a
 compCoreSharedBulkArrCMD (WriteArr offset spm range ram) =
     compCoreSharedCopy "core_write_shared" spm ram offset range
 compCoreSharedBulkArrCMD (ReadArr  offset spm range ram) =
     compCoreSharedCopy "core_read_shared"  spm ram offset range
 
-instance Interp (BulkArrCMD SharedArr) CoreGen (Param2 exp pred)
+instance Interp (BulkArrCMD SArr) CoreGen (Param2 exp pred)
   where interp = compCoreSharedBulkArrCMD
 
 compCoreSharedCopy :: PrimType a => String
-                   -> SharedArr a-> Arr a
+                   -> DSArr a -> Arr (Data a)
                    -> Data Index -> IndexRange -> CoreGen ()
 compCoreSharedCopy op spm ram offset (lower, upper) = do
     shmRef <- asks $ shmRefForName $ arrayRefName spm
@@ -506,10 +506,10 @@ compCoreSharedCopy op spm ram offset (lower, upper) = do
 cGen :: C.CGen a -> (a, C.CEnv)
 cGen = flip C.runCGen (C.defaultCEnv C.Flags)
 
-mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> Length -> arr a
+mkArrayRef :: (ArrayWrapper arr, PrimType a) => VarId -> Length -> arr (Data a)
 mkArrayRef n l = wrapArr $ Arr 0 (value l) $ Single $ Imp.ArrComp n
 
-arrayRefName :: ArrayWrapper arr => arr a -> VarId
+arrayRefName :: ArrayWrapper arr => arr (Data a) -> VarId
 arrayRefName (unwrapArr -> (Arr _ _ (Single (Imp.ArrComp name)))) = name
 
 

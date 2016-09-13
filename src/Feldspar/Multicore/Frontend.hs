@@ -13,16 +13,18 @@ import Language.Embedded.Concurrent as Imp
 -- Bulk array frontend
 --------------------------------------------------------------------------------
 
-writeArr :: (ArrayAccess arr m, PrimType a) => arr a -> IndexRange -> Arr a -> m ()
+writeArr :: (ArrayAccess arr m, PrimType a)
+         => arr (Data a) -> IndexRange -> DArr a -> m ()
 writeArr = writeArrAt 0
 
-readArr :: (ArrayAccess arr m, PrimType a) => arr a -> IndexRange -> Arr a -> m ()
+readArr :: (ArrayAccess arr m, PrimType a)
+        => arr (Data a) -> IndexRange -> DArr a -> m ()
 readArr = readArrAt 0
 
 class ArrayWrapper arr => ArrayAccess arr m
   where
-    writeArrAt :: PrimType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
-    readArrAt  :: PrimType a => Data Index -> arr a -> IndexRange -> Arr a -> m ()
+    writeArrAt :: PrimType a => Data Index -> arr (Data a) -> IndexRange -> DArr a -> m ()
+    readArrAt  :: PrimType a => Data Index -> arr (Data a) -> IndexRange -> DArr a -> m ()
 
 
 --------------------------------------------------------------------------------
@@ -38,24 +40,30 @@ class Halt m
 -- Core layer
 --------------------------------------------------------------------------------
 
-instance ArrayAccess LocalArr CoreComp
+instance ArrayAccess LArr CoreComp
   where
     writeArrAt offset spm range = CoreComp . singleInj . WriteArr offset spm range
-    readArrAt offset spm range = CoreComp . singleInj . ReadArr offset spm range
+    readArrAt  offset spm range = CoreComp . singleInj . ReadArr  offset spm range
 
-instance ArrayAccess SharedArr CoreComp
+instance ArrayAccess SArr CoreComp
   where
     writeArrAt offset spm range = CoreComp . singleInj . WriteArr offset spm range
-    readArrAt offset spm range = CoreComp . singleInj . ReadArr offset spm range
+    readArrAt  offset spm range = CoreComp . singleInj . ReadArr  offset spm range
 
 
-local :: LocalArr a -> CoreComp (Arr a)
-local = return . unLocalArr
+local :: LArr a -> CoreComp (Arr a)
+local = return . unLArr
 
-(-<) :: (Arr a -> CoreComp b) -> LocalArr a -> CoreComp b
-action -< arr = action =<< local arr
+getLArr :: Syntax a => LArr a -> Data Index -> CoreComp a
+getLArr arr i = do
+  larr <- local arr
+  getArr larr i
 
-infixr 1 -<
+setLArr :: forall a. Syntax a => LArr a -> Data Index -> a -> CoreComp ()
+setLArr arr i a = do
+  larr <- local arr
+  setArr larr i a
+
 
 forever :: CoreComp () -> CoreComp ()
 forever = while (return $ true)
@@ -77,15 +85,15 @@ onCore :: CoreId -> CoreComp () -> Host CoreRef
 onCore coreId = onCoreWithRef coreId . const
 
 
-instance ArrayAccess LocalArr Host
+instance ArrayAccess LArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
-    readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
+    readArrAt  offset spm range = Host . singleInj . ReadArr  offset spm range
 
-instance ArrayAccess SharedArr Host
+instance ArrayAccess SArr Host
   where
     writeArrAt offset spm range = Host . singleInj . WriteArr offset spm range
-    readArrAt offset spm range = Host . singleInj . ReadArr offset spm range
+    readArrAt  offset spm range = Host . singleInj . ReadArr  offset spm range
 
 
 instance Halt Host
@@ -101,10 +109,10 @@ forkWithId = Host . Imp.forkWithId . (unHost .)
 -- Allocation layer
 --------------------------------------------------------------------------------
 
-allocLArr :: PrimType a => CoreId -> Length -> Multicore (LocalArr a)
+allocLArr :: PrimType a => CoreId -> Length -> Multicore (DLArr a)
 allocLArr coreId = Multicore . singleInj . AllocLArr coreId
 
-allocSArr :: PrimType a => Length -> Multicore (SharedArr a)
+allocSArr :: PrimType a => Length -> Multicore (DSArr a)
 allocSArr = Multicore . singleInj . AllocSArr
 
 onHost :: Host a -> Multicore a

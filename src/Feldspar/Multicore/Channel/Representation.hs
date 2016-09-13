@@ -69,7 +69,7 @@ instance Interp CoreChanAllocCMD Run (Param2 Prim PrimType)
 data CoreChanCMD fs a where
   ReadChan  :: (Typeable a, pred a)
             => CoreChan c -> exp Index -> exp Index
-            -> Arr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
+            -> DArr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
 
   WriteOne  :: (Typeable a, pred a)
             => CoreChan a -> exp a
@@ -77,7 +77,7 @@ data CoreChanCMD fs a where
 
   WriteChan :: (Typeable a, pred a)
             => CoreChan c -> exp Index -> exp Index
-            -> Arr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
+            -> DArr a -> CoreChanCMD (Param3 prog exp pred) (exp Bool)
 
   CloseChan :: CoreChan a -> CoreChanCMD (Param3 prog exp pred) ()
 

@@ -75,9 +75,9 @@ instance PrimType a => CoreChanType (Data a)
 
 instance PrimType a => CoreTransferable' Host (Data a)
   where
-    type Slot (Data a) = Arr a
+    type Slot (Data a) = DArr a
     newSlot _ = newArr 1
-    getSlot = getArr 0
+    getSlot s = getArr s 0
 
     readChan  (CoreChan _ c) = Host . readChanBuf' c 0 1
     writeChan (CoreChan _ c) = lift . force >=> Host . writeChan' c
@@ -85,9 +85,9 @@ instance PrimType a => CoreTransferable' Host (Data a)
 
 instance PrimType a => CoreTransferable' CoreComp (Data a)
   where
-    type Slot (Data a) = Arr a
+    type Slot (Data a) = DArr a
     newSlot _ = newArr 1
-    getSlot = getArr 0
+    getSlot s = getArr s 0
 
     readChan  (CoreChan _ c) = CoreComp . readChanBuf' c 0 1
     writeChan (CoreChan _ c) = lift . force >=> CoreComp . writeChan' c
@@ -149,17 +149,17 @@ instance (MonadComp m, PrimType a) => CoreTransferType m (DPush m a) (Store (DPu
   where
     toTransfer (Push len dump) = do
         s@(Store (_, arr)) <- newStore len
-        let write i v = setArr i v arr
+        let write i v = setArr arr i v
         dump write
         return s
     fromTransfer (Store (lenRef, arr)) = do
         len <- getRef lenRef
         return $ Push len $ \write ->
             for (0, 1, Excl len) $ \i -> do
-              v <- getArr i arr
+              v <- getArr arr i
               write i v
 
-instance (MonadComp m, PrimType a) => CoreTransferType m (Arr a) (Store (DPull a))
+instance (MonadComp m, PrimType a) => CoreTransferType m (DArr a) (Store (DPull a))
   where
     toTransfer x = do
         lenRef <- initRef $ Feldspar.length x
@@ -177,7 +177,7 @@ readChanBuf' :: ( Typeable a, pred a
               => Rep.CoreChan a
              -> exp Index -- ^ Offset in array to start writing
              -> exp Index -- ^ Elements to read
-             -> Arr a
+             -> DArr a
              -> ProgramT instr (Param2 exp pred) m (exp Bool)
 readChanBuf' ch off sz arr = singleInj $ Rep.ReadChan ch off sz arr
 
@@ -195,7 +195,7 @@ writeChanBuf' :: ( Typeable a, pred a
               => Rep.CoreChan a
               -> exp Index -- ^ Offset in array to start reading
               -> exp Index -- ^ Elements to write
-              -> Arr a
+              -> DArr a
               -> ProgramT instr (Param2 exp pred) m (exp Bool)
 writeChanBuf' ch off sz arr = singleInj $ Rep.WriteChan ch off sz arr
 

@@ -18,23 +18,26 @@ import qualified Language.Embedded.Imperative as Imp
 import qualified Language.Embedded.Imperative.CMD as Imp
 
 
-newtype LocalArr  a = LocalArr  { unLocalArr  :: Arr a }
-newtype SharedArr a = SharedArr { unSharedArr :: Arr a }
+newtype LArr a = LArr { unLArr :: Arr a }
+newtype SArr a = SArr { unSArr :: Arr a }
+
+type DLArr  a = LArr (Data a)
+type DSArr a = SArr (Data a)
 
 class ArrayWrapper arr
   where
     wrapArr   :: Arr a -> arr a
     unwrapArr :: arr a -> Arr a
 
-instance ArrayWrapper LocalArr
+instance ArrayWrapper LArr
   where
-    wrapArr   = LocalArr
-    unwrapArr = unLocalArr
+    wrapArr   = LArr
+    unwrapArr = unLArr
 
-instance ArrayWrapper SharedArr
+instance ArrayWrapper SArr
   where
-    wrapArr   = SharedArr
-    unwrapArr = unSharedArr
+    wrapArr   = SArr
+    unwrapArr = unSArr
 
 
 --------------------------------------------------------------------------------
@@ -46,12 +49,13 @@ type IndexRange = (Data Index, Data Index)
 data BulkArrCMD (arr :: * -> *) fs a
   where
     WriteArr :: PrimType a
-             => Data Index -> arr a
-             -> IndexRange -> Arr a
+             => Data Index -> arr (Data a)
+             -> IndexRange -> DArr a
              -> BulkArrCMD arr (Param3 prog exp pred) ()
     ReadArr  :: PrimType a
-             => Data Index -> arr a
-             -> IndexRange -> Arr a -> BulkArrCMD arr (Param3 prog exp pred) ()
+             => Data Index -> arr (Data a)
+             -> IndexRange -> DArr a
+             -> BulkArrCMD arr (Param3 prog exp pred) ()
 
 instance HFunctor (BulkArrCMD arr)
   where
@@ -62,12 +66,12 @@ runBulkArrCMD :: (MonadComp m, ArrayWrapper arr)
               => BulkArrCMD arr (Param3 m exp pred) a -> m a
 runBulkArrCMD (WriteArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr i ram
-        setArr (i - lower + offset) item (unwrapArr spm)
+        item <- getArr ram i
+        setArr (unwrapArr spm) (i - lower + offset) item
 runBulkArrCMD (ReadArr offset spm (lower, upper) ram) =
     for (lower, 1, Incl upper) $ \i -> do
-        item :: Data a <- getArr (i - lower + offset) (unwrapArr spm)
-        setArr i item ram
+        item <- getArr (unwrapArr spm) (i - lower + offset)
+        setArr ram i item
 
 
 --------------------------------------------------------------------------------
@@ -95,8 +99,8 @@ runCoreHaltCMD (HaltCore (CoreRefRun t)) = killThread t
 type CoreCMD = Imp.ControlCMD
            :+: CoreHaltCMD
            :+: CoreChanCMD
-           :+: BulkArrCMD LocalArr
-           :+: BulkArrCMD SharedArr
+           :+: BulkArrCMD LArr
+           :+: BulkArrCMD SArr
 
 newtype CoreCompT m a = CoreComp
     { unCoreComp :: ProgramT CoreCMD (Param2 Data PrimType') m a }
@@ -143,8 +147,8 @@ type HostCMD = Imp.ControlCMD
            :+: Imp.ThreadCMD
            :+: CoreHaltCMD
            :+: CoreChanCMD
-           :+: BulkArrCMD LocalArr
-           :+: BulkArrCMD SharedArr
+           :+: BulkArrCMD LArr
+           :+: BulkArrCMD SArr
            :+: MulticoreCMD
 
 newtype HostT m a = Host
@@ -207,10 +211,10 @@ data AllocCMD fs a
     AllocLArr :: pred a
               => CoreId
               -> Length
-              -> AllocCMD (Param3 prog exp pred) (LocalArr a)
+              -> AllocCMD (Param3 prog exp pred) (DLArr a)
     AllocSArr :: pred a
               => Length
-              -> AllocCMD (Param3 prog exp pred) (SharedArr a)
+              -> AllocCMD (Param3 prog exp pred) (DSArr a)
     OnHost :: Host a -> AllocCMD (Param3 prog exp pred) a
 
 instance HFunctor AllocCMD
@@ -226,8 +230,8 @@ newtype Multicore a = Multicore
 
 
 runAllocCMD :: AllocCMD (Param3 Run Prim PrimType) a -> Run a
-runAllocCMD (AllocLArr _ size) = LocalArr  <$> newArr (value size)
-runAllocCMD (AllocSArr   size) = SharedArr <$> newArr (value size)
+runAllocCMD (AllocLArr _ size) = LArr <$> newArr (value size)
+runAllocCMD (AllocSArr   size) = SArr <$> newArr (value size)
 runAllocCMD (OnHost host)      = runHost host
 
 instance Interp AllocCMD Run (Param2 Prim PrimType)

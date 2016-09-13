@@ -9,11 +9,11 @@ simple = do
     d1 <- allocLArr 1 10
     d2 <- allocLArr 2 10
     onHost $ do
-        input :: Arr Int32 <- newArr 10
+        input <- newArr 10
         for (0, 1, Incl 9) $ \i -> do
             printf "Item %d> " i
             item <- lift $ fget stdin
-            setArr i item input
+            setArr input i item
 
         writeArr d0 (0,9) input
         onCore 0 (f d0 d1)
@@ -23,22 +23,22 @@ simple = do
 
         printf "Output:"
         for (0, 1, Incl 9) $ \i -> do
-            item :: Data Int32 <- getArr i output
+            item <- getArr output i
             printf " %d" item
         printf "\n"
 
 
-f :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+f :: DLArr Int32 -> DLArr Int32 -> CoreComp ()
 f input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i -< input
-        setArr i (item + 1) -< output
+        item <- getLArr input i
+        setLArr output i (item + 1)
 
-g :: LocalArr Int32 -> LocalArr Int32 -> CoreComp ()
+g :: DLArr Int32 -> DLArr Int32 -> CoreComp ()
 g input output = do
     for (0, 1, Incl 9) $ \i -> do
-        item :: Data Int32 <- getArr i -< input
-        setArr i (item * 2) -< output
+        item <- getLArr input i
+        setLArr output i (item * 2)
 
 
 ------------------------------------------------------------
