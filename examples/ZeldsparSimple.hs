@@ -6,13 +6,12 @@ import Zeldspar.Multicore
 
 
 simple :: Multicore ()
-simple = do
-    runParZ
-        (inc `on` 0 |>>>| twice `on` 1)
-        readInput
-        one
-        writeOutput
-        one
+simple = runParZ
+    (inc `on` 0 |>>>| twice `on` 1)
+    readInput
+    one
+    writeOutput
+    one
   where
     readInput :: Host (Data Int32, Data Bool)
     readInput = liftHost $ fget stdin >>= \i -> return (i, true)

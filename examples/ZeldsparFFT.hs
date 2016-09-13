@@ -1,3 +1,5 @@
+-- FIXME: This example seems to be outdated and not working correctly.
+
 {-# LANGUAGE FlexibleContexts #-}
 module ZeldsparFFT where
 
@@ -111,10 +113,12 @@ testFFT inputFile = do
     (h, inp) <- onHost $ do
         h <- liftHost $ fopen inputFile ReadMode
         input <- newArr (value n)
+        printf "Input:\n"
         for (0, 1, Excl $ value n) $ \i -> do
             re :: Data Double <- liftHost $ fget h
             im :: Data Double <- liftHost $ fget h
-            setArr i (complex re im) input
+            printf "%f %f\n" re im
+            setArr input i (complex re im)
         inp :: ComplexSamples <- unsafeFreezeVec input
         return (h, inp)
     runParZ
@@ -123,7 +127,7 @@ testFFT inputFile = do
         chanSize
         (\output -> do
             let n = length (output :: ComplexSamples)
-            printf "%d\n" n
+            printf "Output (length %d):\n" n
             for (0, 1, Excl n) $ \i -> do
                 let xi :: Data (Complex Double) = output ! i
                     re = realPart xi
@@ -136,7 +140,7 @@ testFFT inputFile = do
 
 ------------------------------------------------------------
 
-test = testFFT "FFT_in8c.txt"
+test = testFFT "tests/FFT_in8.txt"
 
 testAll = do
     icompileAll `onParallella` test
@@ -150,11 +154,11 @@ runTestCompiled = runCompiled' def opts test
     opts = def
         { externalFlagsPre  = [ "-I../imperative-edsl/include"
                               , "../imperative-edsl/csrc/chan.c"]
-        , externalFlagsPost = [ "-lpthread" ]
+        , externalFlagsPost = [ "-lpthread", "-lm" ]
         }
 
-unsafeFreezeVec :: (PrimType a, MonadComp m) => Arr a -> m (DPull a)
+unsafeFreezeVec :: (PrimType a, MonadComp m) => DArr a -> m (DPull a)
 unsafeFreezeVec arr = do
   iarr <- unsafeFreezeArr arr
-  return $ toPull $ Manifest iarr
+  return $ toPull iarr
 

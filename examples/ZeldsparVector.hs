@@ -54,7 +54,7 @@ vector = runParZ
         input <- newArr $ value vecSize
         for (0, 1, Excl $ value vecSize) $ \i -> do
             v <- fget stdin
-            setArr i v input
+            setArr input i v
         vec <- unsafeFreezeVec input
         return (vec, true)
     writeOutput :: DPull Int32 -> Host (Data Bool)
@@ -82,8 +82,8 @@ runTestCompiled = runCompiled' def opts test
         , externalFlagsPost = [ "-lpthread" ]
         }
 
-unsafeFreezeVec :: (PrimType a, MonadComp m) => Arr a -> m (DPull a)
+unsafeFreezeVec :: (PrimType a, MonadComp m) => DArr a -> m (DPull a)
 unsafeFreezeVec arr = do
   iarr <- unsafeFreezeArr arr
-  return $ toPull $ Manifest iarr
+  return $ toPull iarr
 
