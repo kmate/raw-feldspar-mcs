@@ -9,8 +9,8 @@ import Feldspar.Multicore.Representation
 import Language.Embedded.Concurrent as Imp
 
 
-forever :: MonadComp m => m () -> m ()
-forever = while (return true)
+forever :: MonadComp m => m a -> m ()
+forever = while (return true) . void
 
 
 --------------------------------------------------------------------------------

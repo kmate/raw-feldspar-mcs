@@ -13,7 +13,7 @@ primitives = do
         onCore 0 (f c0 c1)
         onCore 1 (g c1 c2)
 
-        while (return $ true) $ do
+        forever $ do
             item <- lift $ fget stdin
             writeChan c0 item
 
@@ -57,8 +57,8 @@ vectors vecSize = do
             arr <- newArr $ value vecSize
             for (0, 1, Excl $ value vecSize) $ \i -> do
                 item <- lift $ fget stdin
-                setArr i item arr
-            lenRef <- initRef (value vecSize :: Data Length)
+                setArr arr i item
+            lenRef <- initRef $ value vecSize
             let input = Store (lenRef, arr)
             writeChan c0 input
 
@@ -67,7 +67,7 @@ vectors vecSize = do
             store :: Store (DPull Int32) <- getSlot slot
             output <- unsafeFreezeStore store
             for (0, 1, Excl $ value vecSize) $ \i -> do
-                let item :: Data Int32 = output ! i
+                let item = output ! i
                 printf "> %d\n" item
 
         closeChan c0
@@ -78,24 +78,25 @@ inc :: CoreChan (Store (DPull Int32)) -> CoreChan (Store (DPull Int32)) -> CoreC
 inc inp out = forever $ do
     slot <- newSlot inp
     readChan inp slot
-    store :: Store (DPull Int32) <- getSlot slot
+    store <- getSlot slot
     v <- unsafeFreezeStore store
     v' <- initStore $ fmap (+1) v
-    void $ writeChan out v'
+    writeChan out v'
 
 twice :: CoreChan (Store (DPull Int32)) -> CoreChan (Store (DPull Int32)) -> CoreComp ()
 twice inp out = forever $ do
     slot <- newSlot inp
     readChan inp slot
-    store :: Store (DPull Int32) <- getSlot slot
+    store <- getSlot slot
     v <- unsafeFreezeStore store
     v' <- initStore $ fmap (*2) v
-    void $ writeChan out v'
+    writeChan out v'
 
 
 ------------------------------------------------------------
 
 test = primitives
+-- test = vectors 5
 
 testAll = do
     icompileAll `onParallella` test
