@@ -128,21 +128,26 @@ compMulticoreCMD (OnCore coreId comp) = do
         $ comp coreRef
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
-    lift $ addInclude "<e-loader.h>"
+    lift $ do
+        addInclude "<e-loader.h>"
+        callProc "e_load"
+            [ strArg $ moduleName coreId ++ ".srec"
+            , groupAddr
+            , valArg $ value r
+            , valArg $ value c
+            , valArg (value 0 :: Data Int32) {- E_FALSE -}
+            ]
     -- TODO:
-    --  * split load and start
-    --  * insert all core data initializer code between them
+    --  * insert all core data initializer code here
     --  * possibily aggregate those in RunGen state on host command compilation
     --    * when an instruction has a core id, and the core is not started
     --    * then do not emit the instruction, just collect it
     --    * then emit the collected code for the current core here!
-    lift $ callProc "e_load"
-        [ strArg $ moduleName coreId ++ ".srec"
-        , groupAddr
-        , valArg $ value r
-        , valArg $ value c
-        , valArg (value 1 :: Data Int32) {- E_TRUE -}
-        ]
+        callProc "e_start"
+            [ groupAddr
+            , valArg $ value r
+            , valArg $ value c
+            ]
     return coreRef
 
 instance Interp MulticoreCMD RunGen (Param2 exp pred)
