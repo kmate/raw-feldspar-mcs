@@ -26,6 +26,14 @@ library
     Feldspar.Multicore.Representation
     Feldspar.Multicore.Reference
     Feldspar.Multicore.Frontend
+    Feldspar.Multicore.Compile.Parallella.Util
+    Feldspar.Multicore.Compile.Parallella.State
+    Feldspar.Multicore.Compile.Parallella.Multicore
+    Feldspar.Multicore.Compile.Parallella.Imports
+    Feldspar.Multicore.Compile.Parallella.Host
+    Feldspar.Multicore.Compile.Parallella.Esdk
+    Feldspar.Multicore.Compile.Parallella.Core
+    Feldspar.Multicore.Compile.Parallella.Channel
     Feldspar.Multicore.Compile.Parallella
     Feldspar.Multicore.Channel.Representation
     Feldspar.Multicore.Channel.Frontend
