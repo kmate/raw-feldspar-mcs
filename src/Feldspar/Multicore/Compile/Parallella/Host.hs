@@ -5,12 +5,12 @@ module Feldspar.Multicore.Compile.Parallella.Host where
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import Feldspar.Multicore.Compile.Parallella.Access
 import Feldspar.Multicore.Compile.Parallella.Channel
 import Feldspar.Multicore.Compile.Parallella.Core
 import Feldspar.Multicore.Compile.Parallella.Esdk
 import Feldspar.Multicore.Compile.Parallella.Imports
 import Feldspar.Multicore.Compile.Parallella.State
-import Feldspar.Multicore.Compile.Parallella.Util
 
 import Feldspar.Run.Concurrent (forkWithId)
 import Feldspar.Run.Compile (env0, ProgC, translate, TargetCMD)
@@ -128,26 +128,14 @@ compMulticoreCMD (OnCore coreId comp) = do
         $ comp coreRef
     groupAddr <- gets group
     let (r, c) = groupCoord coreId
-    lift $ do
-        addInclude "<e-loader.h>"
-        callProc "e_load"
-            [ strArg $ moduleName coreId ++ ".srec"
-            , groupAddr
-            , valArg $ value r
-            , valArg $ value c
-            , valArg (value 0 :: Data Int32) {- E_FALSE -}
-            ]
-    -- TODO:
-    --  * insert all core data initializer code here
-    --  * possibily aggregate those in RunGen state on host command compilation
-    --    * when an instruction has a core id, and the core is not started
-    --    * then do not emit the instruction, just collect it
-    --    * then emit the collected code for the current core here!
-        callProc "e_start"
-            [ groupAddr
-            , valArg $ value r
-            , valArg $ value c
-            ]
+    lift $ addInclude "<e-loader.h>"
+    lift $ callProc "e_load"
+        [ strArg $ moduleName coreId ++ ".srec"
+        , groupAddr
+        , valArg $ value r
+        , valArg $ value c
+        , valArg (value 1 :: Data Int32) {- E_TRUE -}
+        ]
     return coreRef
 
 instance Interp MulticoreCMD RunGen (Param2 exp pred)

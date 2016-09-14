@@ -1,8 +1,8 @@
 module Feldspar.Multicore.Compile.Parallella.Core where
 
+import Feldspar.Multicore.Compile.Parallella.Access
 import Feldspar.Multicore.Compile.Parallella.Imports
 import Feldspar.Multicore.Compile.Parallella.State
-import Feldspar.Multicore.Compile.Parallella.Util
 
 
 --------------------------------------------------------------------------------

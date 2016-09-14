@@ -1,8 +1,8 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Feldspar.Multicore.Compile.Parallella.Esdk where
 
+import Feldspar.Multicore.Compile.Parallella.Access (isCTypeOf)
 import Feldspar.Multicore.Compile.Parallella.Imports
-import Feldspar.Multicore.Compile.Parallella.Util (isCTypeOf)
 
 import qualified Language.C.Monad as C (addGlobal, CGen)
 import Language.C.Quote.C as C

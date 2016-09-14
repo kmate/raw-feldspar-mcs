@@ -7,9 +7,9 @@ import Control.Monad.State
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import Feldspar.Multicore.Compile.Parallella.Access
 import Feldspar.Multicore.Compile.Parallella.Esdk
 import Feldspar.Multicore.Compile.Parallella.Imports
-import Feldspar.Multicore.Compile.Parallella.Util
 
 import qualified Language.C.Monad as C (_includes, CGen)
 import Language.C.Quote.C
@@ -29,15 +29,19 @@ type TypeMap = Map.Map Name C.Type
 type IncludeMap = Map.Map CoreId (Set.Set String)
 type SharedMemRef = FunArg Data PrimType'
 type SharedMemMap = Map.Map Name SharedMemRef
-type ArrayRef = FunArg Data PrimType'
+type CoreInit = Map.Map CoreId (RunGen ())
+type Started = Set.Set CoreId
+
 data RGState = RGState
-    { group   :: FunArg Data PrimType'
-    , nextId  :: Int
-    , addrMap :: AddressMap
-    , nameMap :: NameMap
-    , typeMap :: TypeMap
-    , inclMap :: IncludeMap
-    , shmMap  :: SharedMemMap
+    { group    :: FunArg Data PrimType'
+    , nextId   :: Int
+    , addrMap  :: AddressMap
+    , nameMap  :: NameMap
+    , typeMap  :: TypeMap
+    , inclMap  :: IncludeMap
+    , shmMap   :: SharedMemMap
+    , coreInit :: CoreInit
+    , started  :: Started
     }
 type RunGen = StateT RGState Run
 
@@ -52,13 +56,15 @@ instance ControlGen RunGen
 
 start :: FunArg Data PrimType' -> RGState
 start g = RGState
-    { group   = g
-    , nextId  = 0
-    , addrMap = Map.empty
-    , nameMap = Map.empty
-    , typeMap = Map.empty
-    , inclMap = Map.empty
-    , shmMap  = Map.empty
+    { group    = g
+    , nextId   = 0
+    , addrMap  = Map.empty
+    , nameMap  = Map.empty
+    , typeMap  = Map.empty
+    , inclMap  = Map.empty
+    , shmMap   = Map.empty
+    , coreInit = Map.empty
+    , started  = Set.empty
     }
 
 allocate :: CoreId -> Length -> RGState -> ((LocalAddress, Name), RGState)
@@ -97,6 +103,19 @@ groupCoordsForName name RGState{..}
 shmRefForName :: Name -> RGState -> SharedMemRef
 shmRefForName name RGState{..}
     | Just shmRef <- Map.lookup name shmMap = shmRef
+
+addInit :: CoreId -> RunGen () -> RunGen ()
+addInit coreId init = do
+    execute <- Set.member coreId <$> gets started
+    if execute
+        then init
+        else modify $ \s -> s { coreInit = update $ coreInit s }
+  where
+    update = Map.insertWith combine coreId init
+    combine new existing = sequence_ [ existing, new ]
+
+markStarted :: CoreId -> RunGen ()
+markStarted coreId = modify $ \s -> s { started = Set.insert coreId $ started s }
 
 
 --------------------------------------------------------------------------------
